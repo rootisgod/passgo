@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -269,7 +270,7 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Show loading popup
-	showLoading(app, "Creating VM...", root)
+	showLoading(app, "Creating VM", root)
 
 	// Run the operation in a goroutine to avoid blocking the UI
 	go func() {
@@ -291,7 +292,7 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			showLoading(app, "Stopping VM...", root)
+			showLoading(app, fmt.Sprintf("Stopping VM: %s", vmName), root)
 
 			go func() {
 				_, err := StopVM(vmName)
@@ -314,7 +315,7 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			showLoading(app, "Starting VM...", root)
+			showLoading(app, fmt.Sprintf("Starting VM: %s", vmName), root)
 
 			go func() {
 				_, err := StartVM(vmName)
@@ -348,33 +349,85 @@ func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMT
 }
 
 func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	showLoading(app, "Stopping all VMs...", root)
+	// Get list of VMs first
+	listOutput, err := ListVMs()
+	if err != nil {
+		showError(app, "Error", "Failed to get VM list", root)
+		return
+	}
+
+	// Parse VM names
+	vmNames := parseVMNames(listOutput)
+	if len(vmNames) == 0 {
+		showError(app, "Info", "No VMs found to stop", root)
+		return
+	}
+
+	// Show initial loading with count
+	showLoading(app, fmt.Sprintf("Stopping all VMs (%d total)", len(vmNames)), root)
 
 	go func() {
-		_, err := runMultipassCommand("stop", "--all")
-		app.QueueUpdateDraw(func() {
+		// Process each VM individually to show progress
+		for i, vmName := range vmNames {
+			app.QueueUpdateDraw(func() {
+				showLoading(app, fmt.Sprintf("Stopping VM: %s (%d of %d)", vmName, i+1, len(vmNames)), root)
+			})
+
+			_, err := StopVM(vmName)
 			if err != nil {
-				showError(app, "Stop All Error", err.Error(), root)
-			} else {
-				populateVMTable()
-				app.SetRoot(root, true) // Return to main interface
+				app.QueueUpdateDraw(func() {
+					showError(app, "Stop All Error", fmt.Sprintf("Failed to stop %s: %v", vmName, err), root)
+				})
+				return
 			}
+		}
+
+		// All completed successfully
+		app.QueueUpdateDraw(func() {
+			populateVMTable()
+			app.SetRoot(root, true)
 		})
 	}()
 }
 
 func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	showLoading(app, "Starting all VMs...", root)
+	// Get list of VMs first
+	listOutput, err := ListVMs()
+	if err != nil {
+		showError(app, "Error", "Failed to get VM list", root)
+		return
+	}
+
+	// Parse VM names
+	vmNames := parseVMNames(listOutput)
+	if len(vmNames) == 0 {
+		showError(app, "Info", "No VMs found to start", root)
+		return
+	}
+
+	// Show initial loading with count
+	showLoading(app, fmt.Sprintf("Starting all VMs (%d total)", len(vmNames)), root)
 
 	go func() {
-		_, err := runMultipassCommand("start", "--all")
-		app.QueueUpdateDraw(func() {
+		// Process each VM individually to show progress
+		for i, vmName := range vmNames {
+			app.QueueUpdateDraw(func() {
+				showLoading(app, fmt.Sprintf("Starting VM: %s (%d of %d)", vmName, i+1, len(vmNames)), root)
+			})
+
+			_, err := StartVM(vmName)
 			if err != nil {
-				showError(app, "Start All Error", err.Error(), root)
-			} else {
-				populateVMTable()
-				app.SetRoot(root, true) // Return to main interface
+				app.QueueUpdateDraw(func() {
+					showError(app, "Start All Error", fmt.Sprintf("Failed to start %s: %v", vmName, err), root)
+				})
+				return
 			}
+		}
+
+		// All completed successfully
+		app.QueueUpdateDraw(func() {
+			populateVMTable()
+			app.SetRoot(root, true)
 		})
 	}()
 }
@@ -468,4 +521,22 @@ func showLoading(app *tview.Application, message string, root tview.Primitive) {
 		SetText(message + "\n\nPlease wait...").
 		AddButtons([]string{}) // No buttons - just loading
 	app.SetRoot(modal, false)
+}
+
+// parseVMNames extracts VM names from multipass list output
+func parseVMNames(listOutput string) []string {
+	lines := strings.Split(listOutput, "\n")
+	vmNames := []string{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
+			continue // Skip header and separator lines
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) >= 4 {
+			vmNames = append(vmNames, fields[0])
+		}
+	}
+	return vmNames
 }
