@@ -1,1 +1,158 @@
+name: Build and Release
 
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            binary_name: passgo-linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            binary_name: passgo-linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            binary_name: passgo-darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            binary_name: passgo-darwin-arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            binary_name: passgo-windows-amd64.exe
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+            binary_name: passgo-windows-arm64.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        go build -ldflags="-s -w -X main.Version=${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" -o ${{ matrix.binary_name }} .
+
+    - name: Install UPX
+      if: matrix.os != 'macos-latest'
+      run: |
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
+        elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+          choco install upx
+        fi
+
+    - name: Install UPX (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install upx
+
+    - name: Optimize binary with UPX
+      if: matrix.os != 'macos-latest'
+      run: |
+        upx --best --lzma ${{ matrix.binary_name }}
+
+    - name: Optimize binary with UPX (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        upx --best --lzma ${{ matrix.binary_name }}
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.binary_name }}
+        path: ${{ matrix.binary_name }}
+        retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+
+    - name: Create release archive
+      run: |
+        mkdir -p release
+        for artifact in artifacts/*/; do
+          if [ -d "$artifact" ]; then
+            binary_name=$(basename "$artifact")
+            cp "$artifact/$binary_name" "release/$binary_name"
+          fi
+        done
+
+    - name: Generate checksums
+      run: |
+        cd release
+        for file in *; do
+          if [ -f "$file" ]; then
+            sha256sum "$file" > "$file.sha256"
+          fi
+        done
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          ## Changes
+          - Automated release from commit ${{ github.sha }}
+          
+          ## Downloads
+          Choose the appropriate binary for your operating system and architecture:
+          
+          ### Linux
+          - `passgo-linux-amd64` - Linux x86_64
+          - `passgo-linux-arm64` - Linux ARM64
+          
+          ### macOS
+          - `passgo-darwin-amd64` - macOS Intel
+          - `passgo-darwin-arm64` - macOS Apple Silicon
+          
+          ### Windows
+          - `passgo-windows-amd64.exe` - Windows x86_64
+          - `passgo-windows-arm64.exe` - Windows ARM64
+          
+          ## Verification
+          All binaries are signed with SHA256 checksums. Verify your download:
+          ```bash
+          sha256sum -c <binary-name>.sha256
+          ```
+        files: |
+          release/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
