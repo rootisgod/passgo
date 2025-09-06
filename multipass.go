@@ -27,6 +27,19 @@ func LaunchVM(name, release string) (string, error) {
 	return runMultipassCommand(args...)
 }
 
+// LaunchVMAdvanced launches a new VM with advanced configuration options
+func LaunchVMAdvanced(name, release string, cpus int, memoryMB int, diskGB int) (string, error) {
+	args := []string{
+		"launch",
+		"--name", name,
+		"--cpus", fmt.Sprintf("%d", cpus),
+		"--memory", fmt.Sprintf("%dM", memoryMB),
+		"--disk", fmt.Sprintf("%dG", diskGB),
+		release,
+	}
+	return runMultipassCommand(args...)
+}
+
 // ListVMs lists all VMs
 func ListVMs() (string, error) {
 	return runMultipassCommand("list")
