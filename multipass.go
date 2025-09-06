@@ -67,3 +67,22 @@ func CreateSnapshot(vmName, snapshotName string) (string, error) {
 	args := []string{"snapshot", "--name", snapshotName, vmName}
 	return runMultipassCommand(args...)
 }
+
+// ListSnapshots lists all available snapshots
+func ListSnapshots() (string, error) {
+	return runMultipassCommand("list", "--snapshots")
+}
+
+// RestoreSnapshot restores a VM to a specific snapshot
+func RestoreSnapshot(vmName, snapshotName string) (string, error) {
+	snapshotID := vmName + "." + snapshotName
+	args := []string{"restore", "--destructive", snapshotID}
+	return runMultipassCommand(args...)
+}
+
+// DeleteSnapshot deletes a specific snapshot
+func DeleteSnapshot(vmName, snapshotName string) (string, error) {
+	snapshotID := vmName + "." + snapshotName
+	args := []string{"delete", "--purge", snapshotID}
+	return runMultipassCommand(args...)
+}

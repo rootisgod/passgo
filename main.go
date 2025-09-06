@@ -10,6 +10,87 @@ import (
 	"github.com/rivo/tview"
 )
 
+// Global variables for input capture management
+var globalApp *tview.Application
+var globalRoot tview.Primitive
+var globalVMTable *tview.Table
+var globalPopulateVMTable func()
+
+// setupGlobalInputCapture sets up the global input capture
+func setupGlobalInputCapture() {
+	globalApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlQ, tcell.KeyEscape:
+			globalApp.Stop()
+			return nil
+		}
+
+		switch event.Rune() {
+		case 'q':
+			globalApp.Stop()
+			return nil
+		case 'h':
+			// Show help dialog
+			showHelp(globalApp, globalRoot)
+			return nil
+		case 'c':
+			// Quick create instance
+			quickCreateVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case '[':
+			// Stop selected instance
+			stopSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case ']':
+			// Start selected instance
+			startSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case 'p':
+			// Suspend selected instance
+			suspendSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case '<':
+			// Stop all instances
+			stopAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case '>':
+			// Start all instances
+			startAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case 'd':
+			// Delete selected instance
+			deleteSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case 'r':
+			// Recover deleted instances
+			recoverSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case '!':
+			// Purge all deleted instances
+			purgeAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case '/':
+			// Refresh VM table
+			globalPopulateVMTable()
+			return nil
+		case 's':
+			// Shell into selected VM
+			shellIntoVM(globalApp, globalVMTable)
+			return nil
+		case 'n':
+			// Create snapshot
+			createSnapshot(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case 'm':
+			// Manage snapshots
+			manageSnapshots(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		}
+
+		return event
+	})
+}
+
 func main() {
 	app := tview.NewApplication()
 	flex := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -169,6 +250,12 @@ func main() {
 		}
 	}
 
+	// Set global variables for input capture management
+	globalApp = app
+	globalRoot = flex
+	globalVMTable = vmTable
+	globalPopulateVMTable = populateVMTable
+
 	// Fetch and display VMs at startup
 	go func() {
 		app.QueueUpdateDraw(populateVMTable)
@@ -179,87 +266,13 @@ func main() {
 	// Create footer with keyboard shortcuts
 	footer := tview.NewTextView()
 	footer.SetBorder(true).SetTitle("Shortcuts")
-	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | q (Quit)`)
+	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | m (Manage) | q (Quit)`)
 	footer.SetTextAlign(tview.AlignCenter)
 	footer.SetDynamicColors(true)
 	flex.AddItem(footer, 3, 1, false) // Give footer more height (3 lines)
 
-	// Store reference to root for modal dialogs
-	root := flex
-
-	// Define function to restore global input capture
-	restoreGlobalInputCapture := func() {
-		app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			switch event.Key() {
-			case tcell.KeyCtrlQ, tcell.KeyEscape:
-				app.Stop()
-				return nil
-			}
-
-			switch event.Rune() {
-			case 'q':
-				app.Stop()
-				return nil
-			case 'h':
-				// Show help dialog
-				showHelp(app, root)
-				return nil
-			case 'c':
-				// Quick create instance
-				quickCreateVM(app, vmTable, populateVMTable, root)
-				return nil
-			case '[':
-				// Stop selected instance
-				stopSelectedVM(app, vmTable, populateVMTable, root)
-				return nil
-			case ']':
-				// Start selected instance
-				startSelectedVM(app, vmTable, populateVMTable, root)
-				return nil
-			case 'p':
-				// Suspend selected instance
-				suspendSelectedVM(app, vmTable, populateVMTable, root)
-				return nil
-			case '<':
-				// Stop all instances
-				stopAllVMs(app, vmTable, populateVMTable, root)
-				return nil
-			case '>':
-				// Start all instances
-				startAllVMs(app, vmTable, populateVMTable, root)
-				return nil
-			case 'd':
-				// Delete selected instance
-				deleteSelectedVM(app, vmTable, populateVMTable, root)
-				return nil
-			case 'r':
-				// Recover selected instance
-				recoverSelectedVM(app, vmTable, populateVMTable, root)
-				return nil
-			case '!':
-				// Purge all instances
-				purgeAllVMs(app, vmTable, populateVMTable, root)
-				return nil
-			case '/':
-				// Refresh table
-				populateVMTable()
-				return nil
-			case 's':
-				// Shell into selected instance
-				shellIntoVM(app, vmTable)
-				return nil
-			case 'n':
-				// Create snapshot
-				createSnapshot(app, vmTable, populateVMTable, root)
-				return nil
-			}
-
-			return event
-		})
-	}
-
 	// Set up the global input capture
-	restoreGlobalInputCapture()
+	setupGlobalInputCapture()
 
 	if err := app.SetRoot(flex, true).Run(); err != nil {
 		log.Fatalf("tview error: %v", err)
@@ -269,7 +282,7 @@ func main() {
 // Helper functions for keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nq: Quit").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nq: Quit").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
@@ -289,6 +302,7 @@ func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable
 				showError(app, "Launch Error", err.Error(), root)
 			} else {
 				populateVMTable()
+				setupGlobalInputCapture()
 				app.SetRoot(root, true) // Return to main interface
 			}
 		})
@@ -310,6 +324,7 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 						showError(app, "Stop Error", err.Error(), root)
 					} else {
 						populateVMTable()
+						setupGlobalInputCapture()
 						app.SetRoot(root, true) // Return to main interface
 					}
 				})
@@ -333,6 +348,7 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 						showError(app, "Start Error", err.Error(), root)
 					} else {
 						populateVMTable()
+						setupGlobalInputCapture()
 						app.SetRoot(root, true) // Return to main interface
 					}
 				})
@@ -397,6 +413,7 @@ func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable fu
 		// All completed successfully
 		app.QueueUpdateDraw(func() {
 			populateVMTable()
+			setupGlobalInputCapture()
 			app.SetRoot(root, true)
 		})
 	}()
@@ -442,6 +459,7 @@ func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 		// All completed successfully
 		app.QueueUpdateDraw(func() {
 			populateVMTable()
+			setupGlobalInputCapture()
 			app.SetRoot(root, true)
 		})
 	}()
@@ -520,7 +538,57 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 	}
 }
 
+// isVMStopped checks if the selected VM is in a stopped state
+func isVMStopped(vmTable *tview.Table) (bool, string) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		// Get VM name from first column
+		nameCell := vmTable.GetCell(row, 0)
+		if nameCell == nil {
+			return false, ""
+		}
+		vmName := nameCell.Text
+
+		// Get VM state from second column
+		stateCell := vmTable.GetCell(row, 1)
+		if stateCell == nil {
+			return false, vmName
+		}
+		vmState := stateCell.Text
+
+		// Check if VM is stopped
+		return vmState == "Stopped", vmName
+	}
+	return false, ""
+}
+
+// isVMStoppedByName checks if a VM with the given name is in a stopped state
+func isVMStoppedByName(vmTable *tview.Table, vmName string) bool {
+	rowCount := vmTable.GetRowCount()
+	for row := 1; row < rowCount; row++ { // Skip header row
+		nameCell := vmTable.GetCell(row, 0)
+		if nameCell != nil && nameCell.Text == vmName {
+			stateCell := vmTable.GetCell(row, 1)
+			if stateCell != nil {
+				return stateCell.Text == "Stopped"
+			}
+		}
+	}
+	return false
+}
+
 func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	// Check if VM is stopped
+	isStopped, vmName := isVMStopped(vmTable)
+	if !isStopped {
+		if vmName == "" {
+			showError(app, "Error", "No VM selected", root)
+		} else {
+			showError(app, "Snapshot Error", fmt.Sprintf("Snapshot operations are only available on stopped instances.\n\nVM '%s' is not stopped. Please stop the VM first using the '[' key.", vmName), root)
+		}
+		return
+	}
+
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
 		cell := vmTable.GetCell(row, 0)
@@ -608,6 +676,7 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 							showError(app, "Snapshot Error", err.Error(), root)
 						} else {
 							populateVMTable()
+							setupGlobalInputCapture()
 							app.SetRoot(root, true) // Return to main interface
 						}
 					})
@@ -784,4 +853,216 @@ func parseVMNames(listOutput string) []string {
 		}
 	}
 	return vmNames
+}
+
+func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	// Check if the selected VM is stopped before allowing access to snapshot management
+	isStopped, vmName := isVMStopped(vmTable)
+	if !isStopped {
+		if vmName == "" {
+			showError(app, "Error", "No VM selected", root)
+		} else {
+			showError(app, "Snapshot Error", fmt.Sprintf("Snapshot operations are only available on stopped instances.\n\nVM '%s' is not stopped. Please stop the VM first using the '[' key.", vmName), root)
+		}
+		return
+	}
+
+	// Get the selected VM name
+	row, _ := vmTable.GetSelection()
+	if row <= 0 {
+		showError(app, "Error", "No VM selected", root)
+		return
+	}
+
+	vmNameCell := vmTable.GetCell(row, 0)
+	if vmNameCell == nil {
+		showError(app, "Error", "No VM selected", root)
+		return
+	}
+	selectedVMName := vmNameCell.Text
+
+	// Get list of snapshots
+	snapshotsOutput, err := ListSnapshots()
+	if err != nil {
+		showError(app, "Error", "Failed to get snapshots list", root)
+		return
+	}
+
+	// Parse snapshots
+	allSnapshots := parseSnapshots(snapshotsOutput)
+
+	// Filter snapshots for the selected VM only
+	var snapshots []SnapshotInfo
+	for _, snapshot := range allSnapshots {
+		if snapshot.Instance == selectedVMName {
+			snapshots = append(snapshots, snapshot)
+		}
+	}
+
+	if len(snapshots) == 0 {
+		showError(app, "Info", fmt.Sprintf("No snapshots found for VM '%s'", selectedVMName), root)
+		return
+	}
+
+	// Create snapshot list
+	snapshotList := tview.NewList()
+	snapshotList.SetBorder(true).SetTitle(fmt.Sprintf("Manage Snapshots - %s", selectedVMName))
+
+	// Add snapshots to list
+	for _, snapshot := range snapshots {
+		displayText := fmt.Sprintf("%s.%s", snapshot.Instance, snapshot.Name)
+		if snapshot.Comment != "" {
+			displayText += fmt.Sprintf(" (%s)", snapshot.Comment)
+		}
+		snapshotList.AddItem(displayText, "", 0, nil)
+	}
+
+	// Set up selection handler
+	snapshotList.SetSelectedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
+		if index < len(snapshots) {
+			snapshot := snapshots[index]
+			showSnapshotActions(app, snapshot, populateVMTable, root)
+		}
+	})
+
+	// Add close button - disable global input capture temporarily
+	snapshotList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			// Restore global input capture before returning to main interface
+			setupGlobalInputCapture()
+			app.SetRoot(root, true)
+			return nil
+		}
+		return event
+	})
+
+	// Temporarily disable global input capture
+	app.SetInputCapture(nil)
+	app.SetRoot(snapshotList, true)
+}
+
+func showSnapshotActions(app *tview.Application, snapshot SnapshotInfo, populateVMTable func(), root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText(fmt.Sprintf("Snapshot: %s.%s\n\nWhat would you like to do?", snapshot.Instance, snapshot.Name)).
+		AddButtons([]string{"Revert", "Delete", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			switch buttonLabel {
+			case "Revert":
+				// Check if VM is stopped before allowing revert
+				if !isVMStoppedByName(globalVMTable, snapshot.Instance) {
+					showError(app, "Snapshot Error", fmt.Sprintf("Snapshot operations are only available on stopped instances.\n\nVM '%s' is not stopped. Please stop the VM first using the '[' key.", snapshot.Instance), root)
+					return
+				}
+				// Show confirmation dialog
+				confirmModal := tview.NewModal().
+					SetText(fmt.Sprintf("Are you sure you want to revert %s to snapshot '%s'?\n\nThis will discard the current state!", snapshot.Instance, snapshot.Name)).
+					AddButtons([]string{"Yes", "No"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						if buttonLabel == "Yes" {
+							// Show loading popup
+							showLoading(app, fmt.Sprintf("Reverting %s to snapshot '%s'", snapshot.Instance, snapshot.Name), root)
+
+							// Revert snapshot in goroutine
+							go func() {
+								_, err := RestoreSnapshot(snapshot.Instance, snapshot.Name)
+								app.QueueUpdateDraw(func() {
+									if err != nil {
+										showError(app, "Revert Error", err.Error(), root)
+									} else {
+										populateVMTable()
+										setupGlobalInputCapture()
+										app.SetRoot(root, true) // Return to main interface
+									}
+								})
+							}()
+						} else {
+							setupGlobalInputCapture()
+							app.SetRoot(root, true)
+						}
+					})
+				app.SetRoot(confirmModal, false)
+			case "Delete":
+				// Check if VM is stopped before allowing delete
+				if !isVMStoppedByName(globalVMTable, snapshot.Instance) {
+					showError(app, "Snapshot Error", fmt.Sprintf("Snapshot operations are only available on stopped instances.\n\nVM '%s' is not stopped. Please stop the VM first using the '[' key.", snapshot.Instance), root)
+					return
+				}
+				// Show confirmation dialog
+				confirmModal := tview.NewModal().
+					SetText(fmt.Sprintf("Are you sure you want to delete snapshot '%s' of %s?\n\nThis cannot be undone!", snapshot.Name, snapshot.Instance)).
+					AddButtons([]string{"Yes", "No"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						if buttonLabel == "Yes" {
+							// Show loading popup
+							showLoading(app, fmt.Sprintf("Deleting snapshot '%s' of %s", snapshot.Name, snapshot.Instance), root)
+
+							// Delete snapshot in goroutine
+							go func() {
+								_, err := DeleteSnapshot(snapshot.Instance, snapshot.Name)
+								app.QueueUpdateDraw(func() {
+									if err != nil {
+										showError(app, "Delete Error", err.Error(), root)
+									} else {
+										populateVMTable()
+										setupGlobalInputCapture()
+										app.SetRoot(root, true) // Return to main interface
+									}
+								})
+							}()
+						} else {
+							setupGlobalInputCapture()
+							app.SetRoot(root, true)
+						}
+					})
+				app.SetRoot(confirmModal, false)
+			case "Cancel":
+				setupGlobalInputCapture()
+				app.SetRoot(root, true)
+			}
+		})
+	app.SetRoot(modal, false)
+}
+
+// SnapshotInfo represents a snapshot
+type SnapshotInfo struct {
+	Instance string
+	Name     string
+	Parent   string
+	Comment  string
+}
+
+// parseSnapshots parses the output from multipass list --snapshots
+func parseSnapshots(output string) []SnapshotInfo {
+	var snapshots []SnapshotInfo
+	lines := strings.Split(output, "\n")
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip header line and empty lines
+		if i == 0 || line == "" || strings.Contains(line, "Instance") {
+			continue
+		}
+
+		// Split by whitespace and take first 4 fields
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			snapshot := SnapshotInfo{
+				Instance: fields[0],
+				Name:     fields[1],
+			}
+
+			if len(fields) >= 3 && fields[2] != "--" {
+				snapshot.Parent = fields[2]
+			}
+
+			if len(fields) >= 4 && fields[3] != "--" {
+				snapshot.Comment = fields[3]
+			}
+
+			snapshots = append(snapshots, snapshot)
+		}
+	}
+
+	return snapshots
 }

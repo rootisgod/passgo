@@ -1,1 +1,5 @@
 gopass
+gopass.exe
+gopass-macos-*
+gopass-linux-*
+gopass-windows-*
