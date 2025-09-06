@@ -289,7 +289,7 @@ func main() {
 
 	// First line of shortcuts
 	footerLine1 := tview.NewTextView()
-	footerLine1.SetText("c (Quick Create) | C (Advanced Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
+	footerLine1.SetText("c (Quick Create) | C (Advanced Create + Cloud-init) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
 	footerLine1.SetTextAlign(tview.AlignCenter)
 	footerLine1.SetDynamicColors(true)
 	footerLine1.SetWrap(false)
@@ -329,7 +329,7 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in the same directory as the binary to use them during VM creation.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
@@ -368,6 +368,16 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		"daily",
 	}
 
+	// Scan for cloud-init files
+	cloudInitFiles, err := ScanCloudInitFiles()
+	if err != nil {
+		// If scanning fails, continue without cloud-init option
+		cloudInitFiles = []string{}
+	}
+
+	// Add "None" option to cloud-init files list
+	cloudInitOptions := append([]string{"None"}, cloudInitFiles...)
+
 	// Create the form
 	form := tview.NewForm()
 
@@ -387,6 +397,9 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	// Disk GB input field (default 8GB)
 	form.AddInputField("Disk (GB):", "8", 10, nil, nil)
 
+	// Cloud-init file dropdown (default to "None")
+	form.AddDropDown("Cloud-init File:", cloudInitOptions, 0, nil)
+
 	// Add Create button
 	form.AddButton("Create", func() {
 		// Get form values
@@ -395,6 +408,7 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		cpuText := form.GetFormItem(2).(*tview.InputField).GetText()
 		memoryText := form.GetFormItem(3).(*tview.InputField).GetText()
 		diskText := form.GetFormItem(4).(*tview.InputField).GetText()
+		_, cloudInitFile := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
 
 		// Validate inputs
 		if vmName == "" {
@@ -422,7 +436,12 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 
 		// Run the operation in a goroutine to avoid blocking the UI
 		go func() {
-			_, err := LaunchVMAdvanced(vmName, release, cpus, memoryMB, diskGB)
+			var err error
+			if cloudInitFile == "None" {
+				_, err = LaunchVMAdvanced(vmName, release, cpus, memoryMB, diskGB)
+			} else {
+				_, err = LaunchVMWithCloudInit(vmName, release, cpus, memoryMB, diskGB, cloudInitFile)
+			}
 			app.QueueUpdateDraw(func() {
 				if err != nil {
 					showError(app, "Launch Error", err.Error(), root)

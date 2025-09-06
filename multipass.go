@@ -2,9 +2,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -97,5 +100,67 @@ func RestoreSnapshot(vmName, snapshotName string) (string, error) {
 func DeleteSnapshot(vmName, snapshotName string) (string, error) {
 	snapshotID := vmName + "." + snapshotName
 	args := []string{"delete", "--purge", snapshotID}
+	return runMultipassCommand(args...)
+}
+
+// ScanCloudInitFiles scans the current directory for YAML files that contain #cloud-config
+func ScanCloudInitFiles() ([]string, error) {
+	var cloudInitFiles []string
+
+	// Get the current working directory
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %v", err)
+	}
+
+	// Read directory contents
+	files, err := os.ReadDir(currentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory: %v", err)
+	}
+
+	// Check each file
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		fileName := file.Name()
+		// Check if file has .yml or .yaml extension
+		if !strings.HasSuffix(strings.ToLower(fileName), ".yml") && !strings.HasSuffix(strings.ToLower(fileName), ".yaml") {
+			continue
+		}
+
+		// Read the first line to check for #cloud-config
+		filePath := filepath.Join(currentDir, fileName)
+		fileHandle, err := os.Open(filePath)
+		if err != nil {
+			continue // Skip files we can't read
+		}
+		defer fileHandle.Close()
+
+		scanner := bufio.NewScanner(fileHandle)
+		if scanner.Scan() {
+			firstLine := strings.TrimSpace(scanner.Text())
+			if firstLine == "#cloud-config" {
+				cloudInitFiles = append(cloudInitFiles, fileName)
+			}
+		}
+	}
+
+	return cloudInitFiles, nil
+}
+
+// LaunchVMWithCloudInit launches a new VM with cloud-init configuration
+func LaunchVMWithCloudInit(name, release string, cpus int, memoryMB int, diskGB int, cloudInitFile string) (string, error) {
+	args := []string{
+		"launch",
+		"--name", name,
+		"--cpus", fmt.Sprintf("%d", cpus),
+		"--memory", fmt.Sprintf("%dM", memoryMB),
+		"--disk", fmt.Sprintf("%dG", diskGB),
+		"--cloud-init", cloudInitFile,
+		release,
+	}
 	return runMultipassCommand(args...)
 }
