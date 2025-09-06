@@ -9,36 +9,8 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            binary_name: passgo-linux-amd64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: arm64
-            binary_name: passgo-linux-arm64
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-            binary_name: passgo-darwin-amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            binary_name: passgo-darwin-arm64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            binary_name: passgo-windows-amd64.exe
-          - os: windows-latest
-            goos: windows
-            goarch: arm64
-            binary_name: passgo-windows-arm64.exe
-
+    runs-on: ubuntu-latest
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -48,44 +20,49 @@ jobs:
       with:
         go-version: '1.24'
 
-    - name: Build binary
+    - name: Install UPX
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y upx-ucl
+
+    - name: Build all platforms
       env:
-        GOOS: ${{ matrix.goos }}
-        GOARCH: ${{ matrix.goarch }}
         CGO_ENABLED: 0
       run: |
-        go build -ldflags="-s -w -X main.Version=${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" -o ${{ matrix.binary_name }} .
+        # Build for all platforms
+        platforms=(
+          "linux/amd64:passgo-linux-amd64"
+          "linux/arm64:passgo-linux-arm64"
+          "darwin/amd64:passgo-darwin-amd64"
+          "darwin/arm64:passgo-darwin-arm64"
+          "windows/amd64:passgo-windows-amd64.exe"
+          "windows/arm64:passgo-windows-arm64.exe"
+        )
+        
+        for platform in "${platforms[@]}"; do
+          IFS=':' read -r os_arch binary_name <<< "$platform"
+          IFS='/' read -r goos goarch <<< "$os_arch"
+          
+          echo "Building $binary_name for $goos/$goarch"
+          GOOS=$goos GOARCH=$goarch go build \
+            -ldflags="-s -w -X main.Version=${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" \
+            -o "$binary_name" .
+          
+          echo "Optimizing $binary_name with UPX"
+          upx --best --lzma "$binary_name"
+        done
 
-    - name: Install UPX
-      if: matrix.os != 'macos-latest'
-      run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          sudo apt-get update
-          sudo apt-get install -y upx-ucl
-        elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-          choco install upx
-        fi
-
-    - name: Install UPX (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install upx
-
-    - name: Optimize binary with UPX
-      if: matrix.os != 'macos-latest'
-      run: |
-        upx --best --lzma ${{ matrix.binary_name }}
-
-    - name: Optimize binary with UPX (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        upx --best --lzma ${{ matrix.binary_name }}
-
-    - name: Upload binary
+    - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.binary_name }}
-        path: ${{ matrix.binary_name }}
+        name: binaries
+        path: |
+          passgo-linux-amd64
+          passgo-linux-arm64
+          passgo-darwin-amd64
+          passgo-darwin-arm64
+          passgo-windows-amd64.exe
+          passgo-windows-arm64.exe
         retention-days: 30
 
   release:
@@ -105,12 +82,7 @@ jobs:
     - name: Create release archive
       run: |
         mkdir -p release
-        for artifact in artifacts/*/; do
-          if [ -d "$artifact" ]; then
-            binary_name=$(basename "$artifact")
-            cp "$artifact/$binary_name" "release/$binary_name"
-          fi
-        done
+        cp artifacts/binaries/* release/
 
     - name: Generate checksums
       run: |
