@@ -1070,6 +1070,100 @@ func parseVMNames(listOutput string) []string {
 	return vmNames
 }
 
+// buildSnapshotTree creates a tree structure from snapshots showing parent-child relationships
+func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
+	// Create a map to store snapshots by name for quick lookup
+	snapshotMap := make(map[string]*SnapshotInfo)
+	for i := range snapshots {
+		snapshotMap[snapshots[i].Name] = &snapshots[i]
+	}
+
+	// Create a map to store tree nodes by snapshot name
+	nodeMap := make(map[string]*tview.TreeNode)
+
+	// Create root node
+	rootNode := tview.NewTreeNode("📁 Snapshots").SetColor(tview.Styles.SecondaryTextColor)
+	rootNode.SetExpanded(true)
+
+	// First pass: create all nodes
+	for _, snapshot := range snapshots {
+		var nodeText string
+
+		// Add icon based on whether it has children (we'll determine this later)
+		if snapshot.Comment != "" {
+			nodeText = fmt.Sprintf("📸 %s (%s)", snapshot.Name, snapshot.Comment)
+		} else {
+			nodeText = fmt.Sprintf("📸 %s", snapshot.Name)
+		}
+
+		node := tview.NewTreeNode(nodeText)
+		node.SetColor(tview.Styles.PrimaryTextColor)
+		node.SetReference(snapshot)
+
+		nodeMap[snapshot.Name] = node
+	}
+
+	// Second pass: build the tree structure
+	for _, snapshot := range snapshots {
+		node := nodeMap[snapshot.Name]
+
+		if snapshot.Parent == "" {
+			// This is a root snapshot (no parent)
+			rootNode.AddChild(node)
+		} else {
+			// This snapshot has a parent
+			if parentNode, exists := nodeMap[snapshot.Parent]; exists {
+				parentNode.AddChild(node)
+			} else {
+				// Parent not found, add to root (orphaned snapshot)
+				rootNode.AddChild(node)
+			}
+		}
+	}
+
+	// Third pass: update icons for nodes with children
+	for _, snapshot := range snapshots {
+		node := nodeMap[snapshot.Name]
+		if len(node.GetChildren()) > 0 {
+			// This node has children, update its icon
+			var newText string
+			if snapshot.Comment != "" {
+				newText = fmt.Sprintf("📁 %s (%s)", snapshot.Name, snapshot.Comment)
+			} else {
+				newText = fmt.Sprintf("📁 %s", snapshot.Name)
+			}
+			node.SetText(newText)
+		}
+	}
+
+	// Set initial selection to first snapshot if available
+	if len(snapshots) > 0 {
+		firstSnapshot := snapshots[0]
+		if firstNode, exists := nodeMap[firstSnapshot.Name]; exists {
+			// Expand the path to the first snapshot
+			expandPathToNode(rootNode, firstNode)
+		}
+	}
+
+	return rootNode
+}
+
+// expandPathToNode expands all nodes in the path to reach the target node
+func expandPathToNode(root, target *tview.TreeNode) bool {
+	if root == target {
+		return true
+	}
+
+	for _, child := range root.GetChildren() {
+		if expandPathToNode(child, target) {
+			root.SetExpanded(true)
+			return true
+		}
+	}
+
+	return false
+}
+
 func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Check if the selected VM is stopped before allowing access to snapshot management
 	isStopped, vmName := isVMStopped(vmTable)
@@ -1119,29 +1213,66 @@ func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTab
 		return
 	}
 
-	// Create snapshot list
-	snapshotList := tview.NewList()
-	snapshotList.SetBorder(true).SetTitle(fmt.Sprintf("Manage Snapshots - %s", selectedVMName))
+	// Create a flex layout for the snapshot manager
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
 
-	// Add snapshots to list
-	for _, snapshot := range snapshots {
-		displayText := fmt.Sprintf("%s.%s", snapshot.Instance, snapshot.Name)
-		if snapshot.Comment != "" {
-			displayText += fmt.Sprintf(" (%s)", snapshot.Comment)
+	// Build snapshot tree structure
+	snapshotTree := buildSnapshotTree(snapshots)
+
+	// Create snapshot tree view
+	snapshotTreeView := tview.NewTreeView()
+	snapshotTreeView.SetBorder(true).SetTitle(fmt.Sprintf("Snapshot Tree for %s", selectedVMName))
+	snapshotTreeView.SetBorderPadding(1, 1, 1, 1)
+	snapshotTreeView.SetRoot(snapshotTree)
+	snapshotTreeView.SetCurrentNode(snapshotTree)
+
+	// Create a details panel to show snapshot information
+	detailsPanel := tview.NewTextView()
+	detailsPanel.SetBorder(true).SetTitle("Snapshot Details")
+	detailsPanel.SetBorderPadding(1, 1, 1, 1)
+	detailsPanel.SetDynamicColors(true)
+	detailsPanel.SetWrap(true)
+
+	// Set up selection handler for tree view
+	snapshotTreeView.SetSelectedFunc(func(node *tview.TreeNode) {
+		reference := node.GetReference()
+		if reference != nil {
+			if snapshot, ok := reference.(SnapshotInfo); ok {
+				showSnapshotActions(app, snapshot, populateVMTable, root)
+			}
 		}
-		snapshotList.AddItem(displayText, "", 0, nil)
-	}
+	})
 
-	// Set up selection handler
-	snapshotList.SetSelectedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
-		if index < len(snapshots) {
-			snapshot := snapshots[index]
-			showSnapshotActions(app, snapshot, populateVMTable, root)
+	// Update details when selection changes
+	snapshotTreeView.SetChangedFunc(func(node *tview.TreeNode) {
+		reference := node.GetReference()
+		if reference != nil {
+			if snapshot, ok := reference.(SnapshotInfo); ok {
+				// Create detailed display
+				details := fmt.Sprintf("[::b]Snapshot Name:[::-] %s\n\n", snapshot.Name)
+				details += fmt.Sprintf("[::b]VM Instance:[::-] %s\n\n", snapshot.Instance)
+
+				if snapshot.Comment != "" {
+					details += fmt.Sprintf("[::b]Description:[::-] %s\n\n", snapshot.Comment)
+				} else {
+					details += "[::b]Description:[::-] No description provided\n\n"
+				}
+
+				if snapshot.Parent != "" {
+					details += fmt.Sprintf("[::b]Parent Snapshot:[::-] %s\n\n", snapshot.Parent)
+				} else {
+					details += "[::b]Parent Snapshot:[::-] Root snapshot\n\n"
+				}
+
+				details += "[::d]Press Enter to manage this snapshot[::-]"
+
+				detailsPanel.SetText(details)
+			}
 		}
 	})
 
 	// Add close button - disable global input capture temporarily
-	snapshotList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+	snapshotTreeView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
 			// Restore global input capture before returning to main interface
 			setupGlobalInputCapture()
@@ -1151,14 +1282,41 @@ func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTab
 		return event
 	})
 
+	// Create horizontal flex for tree and details
+	horizontalFlex := tview.NewFlex().SetDirection(tview.FlexColumn)
+	horizontalFlex.AddItem(snapshotTreeView, 0, 1, true) // Tree takes up left side
+	horizontalFlex.AddItem(detailsPanel, 0, 1, false)    // Details take up right side
+
+	// Add instructions at the bottom
+	instructions := tview.NewTextView()
+	instructions.SetText("Use ↑↓←→ to navigate tree • Space/Enter to expand/manage • Esc to return")
+	instructions.SetTextAlign(tview.AlignCenter)
+	instructions.SetTextColor(tview.Styles.SecondaryTextColor)
+
+	// Add everything to the main flex
+	flex.AddItem(horizontalFlex, 0, 1, true)
+	flex.AddItem(instructions, 1, 1, false)
+
 	// Temporarily disable global input capture
 	app.SetInputCapture(nil)
-	app.SetRoot(snapshotList, true)
+	app.SetRoot(flex, true)
 }
 
 func showSnapshotActions(app *tview.Application, snapshot SnapshotInfo, populateVMTable func(), root tview.Primitive) {
+	// Create a more detailed modal text
+	var modalText string
+	modalText += "[::b]Snapshot Management[::-]\n\n"
+	modalText += fmt.Sprintf("[::b]Name:[::-] %s\n", snapshot.Name)
+	modalText += fmt.Sprintf("[::b]VM:[::-] %s\n", snapshot.Instance)
+
+	if snapshot.Comment != "" {
+		modalText += fmt.Sprintf("[::b]Description:[::-] %s\n", snapshot.Comment)
+	}
+
+	modalText += "\nWhat would you like to do?"
+
 	modal := tview.NewModal().
-		SetText(fmt.Sprintf("Snapshot: %s.%s\n\nWhat would you like to do?", snapshot.Instance, snapshot.Name)).
+		SetText(modalText).
 		AddButtons([]string{"Revert", "Delete", "Cancel"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			switch buttonLabel {
