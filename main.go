@@ -65,13 +65,10 @@ func main() {
 
 				// Parse VM line (format: Name State IPv4 Image Release)
 				fields := strings.Fields(line)
-				if len(fields) >= 3 {
+				if len(fields) >= 4 {
 					vmName := fields[0]
 					vmState := fields[1]
-					vmImage := ""
-					if len(fields) >= 4 {
-						vmImage = fields[3]
-					}
+					vmImage := fields[3] // Image is field[3], IPv4 is field[2] (which we skip)
 
 					vmTable.SetCell(row, 0, tview.NewTableCell(vmName).SetTextColor(tview.Styles.PrimaryTextColor))
 					vmTable.SetCell(row, 1, tview.NewTableCell(vmState).SetTextColor(tview.Styles.PrimaryTextColor))
