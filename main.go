@@ -179,7 +179,7 @@ func main() {
 	// Create footer with keyboard shortcuts
 	footer := tview.NewTextView()
 	footer.SetBorder(true).SetTitle("Shortcuts")
-	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | q (Quit)`)
+	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | q (Quit)`)
 	footer.SetTextAlign(tview.AlignCenter)
 	footer.SetDynamicColors(true)
 	flex.AddItem(footer, 3, 1, false) // Give footer more height (3 lines)
@@ -187,70 +187,79 @@ func main() {
 	// Store reference to root for modal dialogs
 	root := flex
 
-	// Add keyboard input handling
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyCtrlQ, tcell.KeyEscape:
-			app.Stop()
-			return nil
-		}
+	// Define function to restore global input capture
+	restoreGlobalInputCapture := func() {
+		app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			switch event.Key() {
+			case tcell.KeyCtrlQ, tcell.KeyEscape:
+				app.Stop()
+				return nil
+			}
 
-		switch event.Rune() {
-		case 'q':
-			app.Stop()
-			return nil
-		case 'h':
-			// Show help dialog
-			showHelp(app, root)
-			return nil
-		case 'c':
-			// Quick create instance
-			quickCreateVM(app, vmTable, populateVMTable, root)
-			return nil
-		case '[':
-			// Stop selected instance
-			stopSelectedVM(app, vmTable, populateVMTable, root)
-			return nil
-		case ']':
-			// Start selected instance
-			startSelectedVM(app, vmTable, populateVMTable, root)
-			return nil
-		case 'p':
-			// Suspend selected instance
-			suspendSelectedVM(app, vmTable, populateVMTable, root)
-			return nil
-		case '<':
-			// Stop all instances
-			stopAllVMs(app, vmTable, populateVMTable, root)
-			return nil
-		case '>':
-			// Start all instances
-			startAllVMs(app, vmTable, populateVMTable, root)
-			return nil
-		case 'd':
-			// Delete selected instance
-			deleteSelectedVM(app, vmTable, populateVMTable, root)
-			return nil
-		case 'r':
-			// Recover selected instance
-			recoverSelectedVM(app, vmTable, populateVMTable, root)
-			return nil
-		case '!':
-			// Purge all instances
-			purgeAllVMs(app, vmTable, populateVMTable, root)
-			return nil
-		case '/':
-			// Refresh table
-			populateVMTable()
-			return nil
-		case 's':
-			// Shell into selected instance
-			shellIntoVM(app, vmTable)
-			return nil
-		}
+			switch event.Rune() {
+			case 'q':
+				app.Stop()
+				return nil
+			case 'h':
+				// Show help dialog
+				showHelp(app, root)
+				return nil
+			case 'c':
+				// Quick create instance
+				quickCreateVM(app, vmTable, populateVMTable, root)
+				return nil
+			case '[':
+				// Stop selected instance
+				stopSelectedVM(app, vmTable, populateVMTable, root)
+				return nil
+			case ']':
+				// Start selected instance
+				startSelectedVM(app, vmTable, populateVMTable, root)
+				return nil
+			case 'p':
+				// Suspend selected instance
+				suspendSelectedVM(app, vmTable, populateVMTable, root)
+				return nil
+			case '<':
+				// Stop all instances
+				stopAllVMs(app, vmTable, populateVMTable, root)
+				return nil
+			case '>':
+				// Start all instances
+				startAllVMs(app, vmTable, populateVMTable, root)
+				return nil
+			case 'd':
+				// Delete selected instance
+				deleteSelectedVM(app, vmTable, populateVMTable, root)
+				return nil
+			case 'r':
+				// Recover selected instance
+				recoverSelectedVM(app, vmTable, populateVMTable, root)
+				return nil
+			case '!':
+				// Purge all instances
+				purgeAllVMs(app, vmTable, populateVMTable, root)
+				return nil
+			case '/':
+				// Refresh table
+				populateVMTable()
+				return nil
+			case 's':
+				// Shell into selected instance
+				shellIntoVM(app, vmTable)
+				return nil
+			case 'n':
+				// Create snapshot
+				createSnapshot(app, vmTable, populateVMTable, root)
+				return nil
+			}
 
-		return event
-	})
+			return event
+		})
+	}
+
+	// Set up the global input capture
+	restoreGlobalInputCapture()
 
 	if err := app.SetRoot(flex, true).Run(); err != nil {
 		log.Fatalf("tview error: %v", err)
@@ -260,7 +269,7 @@ func main() {
 // Helper functions for keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nq: Quit").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nq: Quit").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
@@ -507,6 +516,236 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 			// Note: This would need to be implemented to actually shell into the VM
 			// For now, we'll just show a message
 			log.Printf("Would shell into VM: %s", vmName)
+		}
+	}
+}
+
+func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+
+			// Create a simple form with the input field
+			form := tview.NewForm()
+
+			// Add input field
+			form.AddInputField("Snapshot name", "", 20, nil, nil)
+
+			// Add Create button
+			form.AddButton("Create", func() {
+				snapshotName := form.GetFormItem(0).(*tview.InputField).GetText()
+				if snapshotName == "" {
+					showError(app, "Error", "Snapshot name cannot be empty", root)
+					return
+				}
+
+				// Show loading popup
+				showLoading(app, fmt.Sprintf("Creating snapshot '%s' for VM: %s", snapshotName, vmName), root)
+
+				// Create snapshot in goroutine
+				go func() {
+					_, err := CreateSnapshot(vmName, snapshotName)
+					app.QueueUpdateDraw(func() {
+						// Restore global input capture
+						app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+							switch event.Key() {
+							case tcell.KeyCtrlQ, tcell.KeyEscape:
+								app.Stop()
+								return nil
+							}
+
+							switch event.Rune() {
+							case 'q':
+								app.Stop()
+								return nil
+							case 'h':
+								showHelp(app, root)
+								return nil
+							case 'c':
+								quickCreateVM(app, vmTable, populateVMTable, root)
+								return nil
+							case '[':
+								stopSelectedVM(app, vmTable, populateVMTable, root)
+								return nil
+							case ']':
+								startSelectedVM(app, vmTable, populateVMTable, root)
+								return nil
+							case 'p':
+								suspendSelectedVM(app, vmTable, populateVMTable, root)
+								return nil
+							case '<':
+								stopAllVMs(app, vmTable, populateVMTable, root)
+								return nil
+							case '>':
+								startAllVMs(app, vmTable, populateVMTable, root)
+								return nil
+							case 'd':
+								deleteSelectedVM(app, vmTable, populateVMTable, root)
+								return nil
+							case 'r':
+								recoverSelectedVM(app, vmTable, populateVMTable, root)
+								return nil
+							case '!':
+								purgeAllVMs(app, vmTable, populateVMTable, root)
+								return nil
+							case '/':
+								populateVMTable()
+								return nil
+							case 's':
+								shellIntoVM(app, vmTable)
+								return nil
+							case 'n':
+								createSnapshot(app, vmTable, populateVMTable, root)
+								return nil
+							}
+
+							return event
+						})
+
+						if err != nil {
+							showError(app, "Snapshot Error", err.Error(), root)
+						} else {
+							populateVMTable()
+							app.SetRoot(root, true) // Return to main interface
+						}
+					})
+				}()
+			})
+
+			// Add Cancel button
+			form.AddButton("Cancel", func() {
+				// Restore global input capture
+				app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+					switch event.Key() {
+					case tcell.KeyCtrlQ, tcell.KeyEscape:
+						app.Stop()
+						return nil
+					}
+
+					switch event.Rune() {
+					case 'q':
+						app.Stop()
+						return nil
+					case 'h':
+						showHelp(app, root)
+						return nil
+					case 'c':
+						quickCreateVM(app, vmTable, populateVMTable, root)
+						return nil
+					case '[':
+						stopSelectedVM(app, vmTable, populateVMTable, root)
+						return nil
+					case ']':
+						startSelectedVM(app, vmTable, populateVMTable, root)
+						return nil
+					case 'p':
+						suspendSelectedVM(app, vmTable, populateVMTable, root)
+						return nil
+					case '<':
+						stopAllVMs(app, vmTable, populateVMTable, root)
+						return nil
+					case '>':
+						startAllVMs(app, vmTable, populateVMTable, root)
+						return nil
+					case 'd':
+						deleteSelectedVM(app, vmTable, populateVMTable, root)
+						return nil
+					case 'r':
+						recoverSelectedVM(app, vmTable, populateVMTable, root)
+						return nil
+					case '!':
+						purgeAllVMs(app, vmTable, populateVMTable, root)
+						return nil
+					case '/':
+						populateVMTable()
+						return nil
+					case 's':
+						shellIntoVM(app, vmTable)
+						return nil
+					case 'n':
+						createSnapshot(app, vmTable, populateVMTable, root)
+						return nil
+					}
+
+					return event
+				})
+				app.SetRoot(root, true)
+			})
+
+			form.SetBorder(true).SetTitle(fmt.Sprintf("Create Snapshot for VM: %s", vmName))
+
+			// Temporarily disable global input capture
+			app.SetInputCapture(nil)
+
+			// Set up form-specific input capture
+			form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+				// Handle Escape key to cancel
+				if event.Key() == tcell.KeyEscape {
+					// Restore global input capture
+					app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+						switch event.Key() {
+						case tcell.KeyCtrlQ, tcell.KeyEscape:
+							app.Stop()
+							return nil
+						}
+
+						switch event.Rune() {
+						case 'q':
+							app.Stop()
+							return nil
+						case 'h':
+							showHelp(app, root)
+							return nil
+						case 'c':
+							quickCreateVM(app, vmTable, populateVMTable, root)
+							return nil
+						case '[':
+							stopSelectedVM(app, vmTable, populateVMTable, root)
+							return nil
+						case ']':
+							startSelectedVM(app, vmTable, populateVMTable, root)
+							return nil
+						case 'p':
+							suspendSelectedVM(app, vmTable, populateVMTable, root)
+							return nil
+						case '<':
+							stopAllVMs(app, vmTable, populateVMTable, root)
+							return nil
+						case '>':
+							startAllVMs(app, vmTable, populateVMTable, root)
+							return nil
+						case 'd':
+							deleteSelectedVM(app, vmTable, populateVMTable, root)
+							return nil
+						case 'r':
+							recoverSelectedVM(app, vmTable, populateVMTable, root)
+							return nil
+						case '!':
+							purgeAllVMs(app, vmTable, populateVMTable, root)
+							return nil
+						case '/':
+							populateVMTable()
+							return nil
+						case 's':
+							shellIntoVM(app, vmTable)
+							return nil
+						case 'n':
+							createSnapshot(app, vmTable, populateVMTable, root)
+							return nil
+						}
+
+						return event
+					})
+					app.SetRoot(root, true)
+					return nil
+				}
+				// Let the form handle all other input
+				return event
+			})
+
+			app.SetRoot(form, true)
 		}
 	}
 }
