@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -174,30 +175,252 @@ func main() {
 
 	flex.AddItem(vmTable, 0, 1, true) // Make the table focusable
 
-	// Button to refresh VM list
-	refreshButton := tview.NewButton("Refresh VMs").SetSelectedFunc(func() {
-		populateVMTable()
-	})
-	flex.AddItem(refreshButton, 1, 1, true)
+	// Create footer with keyboard shortcuts
+	footer := tview.NewTextView()
+	footer.SetBorder(true).SetTitle("Shortcuts")
+	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | q (Quit)`)
+	footer.SetTextAlign(tview.AlignCenter)
+	footer.SetDynamicColors(true)
+	flex.AddItem(footer, 3, 1, false) // Give footer more height (3 lines)
 
-	// Button to launch a new VM
-	launchButton := tview.NewButton("Launch VM").SetSelectedFunc(func() {
-		_, err := LaunchVM("test-vm", "22.04")
-		if err != nil {
-			// Show error in table temporarily
-			clearVMRows()
-			vmTable.SetCell(1, 0, tview.NewTableCell("Launch Error").SetTextColor(tview.Styles.PrimaryTextColor))
-			for i := 1; i < 9; i++ {
-				vmTable.SetCell(1, i, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
-			}
-		} else {
-			// Refresh the table to show the new VM
-			populateVMTable()
+	// Store reference to root for modal dialogs
+	root := flex
+
+	// Add keyboard input handling
+	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlQ, tcell.KeyEscape:
+			app.Stop()
+			return nil
 		}
+
+		switch event.Rune() {
+		case 'q':
+			app.Stop()
+			return nil
+		case 'h':
+			// Show help dialog
+			showHelp(app, root)
+			return nil
+		case 'c':
+			// Quick create instance
+			quickCreateVM(app, vmTable, populateVMTable, root)
+			return nil
+		case '[':
+			// Stop selected instance
+			stopSelectedVM(app, vmTable, populateVMTable, root)
+			return nil
+		case ']':
+			// Start selected instance
+			startSelectedVM(app, vmTable, populateVMTable, root)
+			return nil
+		case 'p':
+			// Suspend selected instance
+			suspendSelectedVM(app, vmTable, populateVMTable, root)
+			return nil
+		case '<':
+			// Stop all instances
+			stopAllVMs(app, vmTable, populateVMTable, root)
+			return nil
+		case '>':
+			// Start all instances
+			startAllVMs(app, vmTable, populateVMTable, root)
+			return nil
+		case 'd':
+			// Delete selected instance
+			deleteSelectedVM(app, vmTable, populateVMTable, root)
+			return nil
+		case 'r':
+			// Recover selected instance
+			recoverSelectedVM(app, vmTable, populateVMTable, root)
+			return nil
+		case '!':
+			// Purge all instances
+			purgeAllVMs(app, vmTable, populateVMTable, root)
+			return nil
+		case '/':
+			// Refresh table
+			populateVMTable()
+			return nil
+		case 's':
+			// Shell into selected instance
+			shellIntoVM(app, vmTable)
+			return nil
+		}
+
+		return event
 	})
-	flex.AddItem(launchButton, 1, 1, false)
 
 	if err := app.SetRoot(flex, true).Run(); err != nil {
 		log.Fatalf("tview error: %v", err)
 	}
+}
+
+// Helper functions for keyboard shortcuts
+func showHelp(app *tview.Application, root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nq: Quit").
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			app.SetRoot(root, true)
+		})
+	app.SetRoot(modal, false)
+}
+
+func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	_, err := LaunchVM("test-vm", "22.04")
+	if err != nil {
+		showError(app, "Launch Error", err.Error(), root)
+	} else {
+		populateVMTable()
+	}
+}
+
+func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			_, err := StopVM(vmName)
+			if err != nil {
+				showError(app, "Stop Error", err.Error(), root)
+			} else {
+				populateVMTable()
+			}
+		}
+	}
+}
+
+func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			_, err := StartVM(vmName)
+			if err != nil {
+				showError(app, "Start Error", err.Error(), root)
+			} else {
+				populateVMTable()
+			}
+		}
+	}
+}
+
+func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			_, err := runMultipassCommand("suspend", vmName)
+			if err != nil {
+				showError(app, "Suspend Error", err.Error(), root)
+			} else {
+				populateVMTable()
+			}
+		}
+	}
+}
+
+func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	_, err := runMultipassCommand("stop", "--all")
+	if err != nil {
+		showError(app, "Stop All Error", err.Error(), root)
+	} else {
+		populateVMTable()
+	}
+}
+
+func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	_, err := runMultipassCommand("start", "--all")
+	if err != nil {
+		showError(app, "Start All Error", err.Error(), root)
+	} else {
+		populateVMTable()
+	}
+}
+
+func deleteSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			modal := tview.NewModal().
+				SetText("Are you sure you want to delete " + vmName + "?").
+				AddButtons([]string{"Yes", "No"}).
+				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					if buttonLabel == "Yes" {
+						_, err := DeleteVM(vmName, false)
+						if err != nil {
+							showError(app, "Delete Error", err.Error(), root)
+						} else {
+							populateVMTable()
+						}
+					}
+					app.SetRoot(root, true)
+				})
+			app.SetRoot(modal, false)
+		}
+	}
+}
+
+func recoverSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			_, err := runMultipassCommand("recover", vmName)
+			if err != nil {
+				showError(app, "Recover Error", err.Error(), root)
+			} else {
+				populateVMTable()
+			}
+		}
+	}
+}
+
+func purgeAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText("Are you sure you want to PURGE ALL VMs? This cannot be undone!").
+		AddButtons([]string{"Yes", "No"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Yes" {
+				_, err := runMultipassCommand("purge")
+				if err != nil {
+					showError(app, "Purge Error", err.Error(), root)
+				} else {
+					populateVMTable()
+				}
+			}
+			app.SetRoot(root, true)
+		})
+	app.SetRoot(modal, false)
+}
+
+func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
+	row, _ := vmTable.GetSelection()
+	if row > 0 {
+		cell := vmTable.GetCell(row, 0)
+		if cell != nil {
+			vmName := cell.Text
+			app.Stop()
+			// Note: This would need to be implemented to actually shell into the VM
+			// For now, we'll just show a message
+			log.Printf("Would shell into VM: %s", vmName)
+		}
+	}
+}
+
+func showError(app *tview.Application, title, message string, root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText(title + ": " + message).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			app.SetRoot(root, true)
+		})
+	app.SetRoot(modal, false)
 }
