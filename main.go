@@ -751,12 +751,17 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 			// Create a simple form with the input field
 			form := tview.NewForm()
 
-			// Add input field
+			// Add input field for snapshot name
 			form.AddInputField("Snapshot name", "", 20, nil, nil)
+
+			// Add input field for description with default timestamp
+			timestamp := time.Now().Format("2006-01-02_15-04")
+			form.AddInputField("Description", timestamp, 30, nil, nil)
 
 			// Add Create button
 			form.AddButton("Create", func() {
 				snapshotName := form.GetFormItem(0).(*tview.InputField).GetText()
+				description := form.GetFormItem(1).(*tview.InputField).GetText()
 				if snapshotName == "" {
 					showError(app, "Error", "Snapshot name cannot be empty", root)
 					return
@@ -767,7 +772,7 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 
 				// Create snapshot in goroutine
 				go func() {
-					_, err := CreateSnapshot(vmName, snapshotName)
+					_, err := CreateSnapshot(vmName, snapshotName, description)
 					app.QueueUpdateDraw(func() {
 						// Restore global input capture
 						app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
