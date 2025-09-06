@@ -4,7 +4,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -15,6 +17,17 @@ var globalApp *tview.Application
 var globalRoot tview.Primitive
 var globalVMTable *tview.Table
 var globalPopulateVMTable func()
+
+// randomString generates a random string of specified length
+func randomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	rand.Seed(time.Now().UnixNano())
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
 
 // setupGlobalInputCapture sets up the global input capture
 func setupGlobalInputCapture() {
@@ -36,6 +49,10 @@ func setupGlobalInputCapture() {
 		case 'c':
 			// Quick create instance
 			quickCreateVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
+		case 'C':
+			// Advanced create instance
+			createAdvancedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '[':
 			// Stop selected instance
@@ -272,7 +289,7 @@ func main() {
 
 	// First line of shortcuts
 	footerLine1 := tview.NewTextView()
-	footerLine1.SetText("c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
+	footerLine1.SetText("c (Quick Create) | C (Advanced Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
 	footerLine1.SetTextAlign(tview.AlignCenter)
 	footerLine1.SetDynamicColors(true)
 	footerLine1.SetWrap(false)
@@ -312,7 +329,7 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
@@ -322,11 +339,13 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Show loading popup
-	showLoading(app, "Creating VM", root)
+	vmName := "VM-" + randomString(4)
+	showLoading(app, "Creating VM: "+vmName, root)
 
 	// Run the operation in a goroutine to avoid blocking the UI
 	go func() {
-		_, err := LaunchVM("test-vm", "22.04")
+		vmName := "VM-" + randomString(4)
+		_, err := LaunchVM(vmName, "24.04")
 		app.QueueUpdateDraw(func() {
 			if err != nil {
 				showError(app, "Launch Error", err.Error(), root)
@@ -337,6 +356,110 @@ func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable
 			}
 		})
 	}()
+}
+
+func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
+	// Available Ubuntu releases
+	releases := []string{
+		"22.04",
+		"20.04",
+		"18.04",
+		"24.04",
+		"daily",
+	}
+
+	// Create the form
+	form := tview.NewForm()
+
+	// Instance Type dropdown (default to Ubuntu 24.04)
+	releaseIndex := 3 // Index for "24.04"
+	form.AddDropDown("Instance Type:", releases, releaseIndex, nil)
+
+	// Instance Name input field
+	form.AddInputField("Instance Name:", "", 20, nil, nil)
+
+	// CPU Cores input field (default 2)
+	form.AddInputField("CPU Cores:", "2", 10, nil, nil)
+
+	// RAM input field (default 2048MB)
+	form.AddInputField("RAM (MB):", "2048", 10, nil, nil)
+
+	// Disk GB input field (default 8GB)
+	form.AddInputField("Disk (GB):", "8", 10, nil, nil)
+
+	// Add Create button
+	form.AddButton("Create", func() {
+		// Get form values
+		_, release := form.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
+		vmName := form.GetFormItem(1).(*tview.InputField).GetText()
+		cpuText := form.GetFormItem(2).(*tview.InputField).GetText()
+		memoryText := form.GetFormItem(3).(*tview.InputField).GetText()
+		diskText := form.GetFormItem(4).(*tview.InputField).GetText()
+
+		// Validate inputs
+		if vmName == "" {
+			showError(app, "Validation Error", "Instance name cannot be empty", root)
+			return
+		}
+
+		// Parse numeric values
+		var cpus, memoryMB, diskGB int
+		if _, err := fmt.Sscanf(cpuText, "%d", &cpus); err != nil || cpus < 1 {
+			showError(app, "Validation Error", "CPU cores must be a positive integer", root)
+			return
+		}
+		if _, err := fmt.Sscanf(memoryText, "%d", &memoryMB); err != nil || memoryMB < 512 {
+			showError(app, "Validation Error", "RAM must be at least 512MB", root)
+			return
+		}
+		if _, err := fmt.Sscanf(diskText, "%d", &diskGB); err != nil || diskGB < 1 {
+			showError(app, "Validation Error", "Disk size must be at least 1GB", root)
+			return
+		}
+
+		// Show loading popup
+		showLoading(app, fmt.Sprintf("Creating VM: %s", vmName), root)
+
+		// Run the operation in a goroutine to avoid blocking the UI
+		go func() {
+			_, err := LaunchVMAdvanced(vmName, release, cpus, memoryMB, diskGB)
+			app.QueueUpdateDraw(func() {
+				if err != nil {
+					showError(app, "Launch Error", err.Error(), root)
+				} else {
+					populateVMTable()
+					setupGlobalInputCapture()
+					app.SetRoot(root, true) // Return to main interface
+				}
+			})
+		}()
+	})
+
+	// Add Cancel button
+	form.AddButton("Cancel", func() {
+		// Restore global input capture
+		setupGlobalInputCapture()
+		app.SetRoot(root, true)
+	})
+
+	form.SetBorder(true).SetTitle("Create New Instance")
+
+	// Temporarily disable global input capture
+	app.SetInputCapture(nil)
+
+	// Set up form-specific input capture
+	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Handle Escape key to cancel
+		if event.Key() == tcell.KeyEscape {
+			setupGlobalInputCapture()
+			app.SetRoot(root, true)
+			return nil
+		}
+		// Let the form handle all other input
+		return event
+	})
+
+	app.SetRoot(form, true)
 }
 
 func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
@@ -664,6 +787,9 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 							case 'c':
 								quickCreateVM(app, vmTable, populateVMTable, root)
 								return nil
+							case 'C':
+								createAdvancedVM(app, vmTable, populateVMTable, root)
+								return nil
 							case '[':
 								stopSelectedVM(app, vmTable, populateVMTable, root)
 								return nil
@@ -733,6 +859,9 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 					case 'c':
 						quickCreateVM(app, vmTable, populateVMTable, root)
 						return nil
+					case 'C':
+						createAdvancedVM(app, vmTable, populateVMTable, root)
+						return nil
 					case '[':
 						stopSelectedVM(app, vmTable, populateVMTable, root)
 						return nil
@@ -799,6 +928,9 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 							return nil
 						case 'c':
 							quickCreateVM(app, vmTable, populateVMTable, root)
+							return nil
+						case 'C':
+							createAdvancedVM(app, vmTable, populateVMTable, root)
 							return nil
 						case '[':
 							stopSelectedVM(app, vmTable, populateVMTable, root)
