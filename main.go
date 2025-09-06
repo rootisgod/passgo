@@ -268,12 +268,21 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 }
 
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	_, err := LaunchVM("test-vm", "22.04")
-	if err != nil {
-		showError(app, "Launch Error", err.Error(), root)
-	} else {
-		populateVMTable()
-	}
+	// Show loading popup
+	showLoading(app, "Creating VM...", root)
+
+	// Run the operation in a goroutine to avoid blocking the UI
+	go func() {
+		_, err := LaunchVM("test-vm", "22.04")
+		app.QueueUpdateDraw(func() {
+			if err != nil {
+				showError(app, "Launch Error", err.Error(), root)
+			} else {
+				populateVMTable()
+				app.SetRoot(root, true) // Return to main interface
+			}
+		})
+	}()
 }
 
 func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
@@ -282,12 +291,19 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			_, err := StopVM(vmName)
-			if err != nil {
-				showError(app, "Stop Error", err.Error(), root)
-			} else {
-				populateVMTable()
-			}
+			showLoading(app, "Stopping VM...", root)
+
+			go func() {
+				_, err := StopVM(vmName)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						showError(app, "Stop Error", err.Error(), root)
+					} else {
+						populateVMTable()
+						app.SetRoot(root, true) // Return to main interface
+					}
+				})
+			}()
 		}
 	}
 }
@@ -298,12 +314,19 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			_, err := StartVM(vmName)
-			if err != nil {
-				showError(app, "Start Error", err.Error(), root)
-			} else {
-				populateVMTable()
-			}
+			showLoading(app, "Starting VM...", root)
+
+			go func() {
+				_, err := StartVM(vmName)
+				app.QueueUpdateDraw(func() {
+					if err != nil {
+						showError(app, "Start Error", err.Error(), root)
+					} else {
+						populateVMTable()
+						app.SetRoot(root, true) // Return to main interface
+					}
+				})
+			}()
 		}
 	}
 }
@@ -325,21 +348,35 @@ func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMT
 }
 
 func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	_, err := runMultipassCommand("stop", "--all")
-	if err != nil {
-		showError(app, "Stop All Error", err.Error(), root)
-	} else {
-		populateVMTable()
-	}
+	showLoading(app, "Stopping all VMs...", root)
+
+	go func() {
+		_, err := runMultipassCommand("stop", "--all")
+		app.QueueUpdateDraw(func() {
+			if err != nil {
+				showError(app, "Stop All Error", err.Error(), root)
+			} else {
+				populateVMTable()
+				app.SetRoot(root, true) // Return to main interface
+			}
+		})
+	}()
 }
 
 func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	_, err := runMultipassCommand("start", "--all")
-	if err != nil {
-		showError(app, "Start All Error", err.Error(), root)
-	} else {
-		populateVMTable()
-	}
+	showLoading(app, "Starting all VMs...", root)
+
+	go func() {
+		_, err := runMultipassCommand("start", "--all")
+		app.QueueUpdateDraw(func() {
+			if err != nil {
+				showError(app, "Start All Error", err.Error(), root)
+			} else {
+				populateVMTable()
+				app.SetRoot(root, true) // Return to main interface
+			}
+		})
+	}()
 }
 
 func deleteSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
@@ -422,5 +459,13 @@ func showError(app *tview.Application, title, message string, root tview.Primiti
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
 		})
+	app.SetRoot(modal, false)
+}
+
+// showLoading displays a loading popup for long-running operations
+func showLoading(app *tview.Application, message string, root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText(message + "\n\nPlease wait...").
+		AddButtons([]string{}) // No buttons - just loading
 	app.SetRoot(modal, false)
 }
