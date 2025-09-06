@@ -289,14 +289,16 @@ func main() {
 
 	// First line of shortcuts
 	footerLine1 := tview.NewTextView()
-	footerLine1.SetText("c (Quick Create) | C (Advanced Create + Cloud-init) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
+
+	// Highlight the key letters with bright yellow for better visibility
+	footerLine1.SetText("[yellow]c[white] Quick Create  [yellow]C[white] Advanced Create  [yellow][[white] Stop  [yellow]][white] Start  [yellow]p[white] Suspend  [yellow]<[white] Stop ALL  [yellow]>[white] Start ALL")
 	footerLine1.SetTextAlign(tview.AlignCenter)
 	footerLine1.SetDynamicColors(true)
 	footerLine1.SetWrap(false)
 
-	// Second line of shortcuts
+	// Second line of shortcuts with highlighted keys
 	footerLine2 := tview.NewTextView()
-	footerLine2.SetText("! (Purge ALL) | / (Refresh) | s (Interactive Shell) | n (New Snapshot) | m (Manage Snapshots) | h (Help) | q (Quit)")
+	footerLine2.SetText("[yellow]d[white] Delete  [yellow]r[white] Recover  [yellow]![white] Purge ALL  [yellow]/[white] Refresh  [yellow]s[white] Shell  [yellow]n[white] New Snapshot  [yellow]m[white] Manage Snapshots  [yellow]q[white] Quit")
 	footerLine2.SetTextAlign(tview.AlignCenter)
 	footerLine2.SetDynamicColors(true)
 	footerLine2.SetWrap(false)
