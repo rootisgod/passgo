@@ -24,3 +24,45 @@ tasks:
     cmds:
       - rm -f gopass-macos-arm64 gopass-macos-amd64 gopass-linux-arm64 gopass-linux-amd64 gopass-windows-arm64.exe gopass-windows-amd64.exe
       - echo "All builds deleted."
+
+  full-test:
+    cmds:
+     - multipass delete --all
+     - multipass purge
+     - multipass launch --name vm1
+     - multipass launch --name vm2
+     - multipass stop vm1
+     - multipass stop vm2
+     - multipass delete --all
+     - multipass purge
+  
+  # create-mixed-instances:
+  cmi:
+    cmds:
+     - multipass delete --all
+     - multipass purge
+     - multipass launch  --name vm1
+     - multipass launch  --name vm2
+     - multipass launch  --name vm3
+     - multipass stop    vm2
+     - multipass suspend vm3
+
+  create-test-instances:
+    cmds:
+     - multipass delete --all
+     - multipass purge
+     - multipass launch --name vm1
+     - multipass launch --name vm2
+
+  stop-all:
+    cmds:
+     - multipass stop --all
+
+  start-all:
+    cmds:
+     - multipass start --all
+
+  delete-all:
+    cmds:
+     - multipass delete --all
+     - multipass purge
