@@ -44,7 +44,7 @@ jobs:
 
           echo "Building $binary_name for $goos/$goarch"
           GOOS=$goos GOARCH=$goarch go build \
-            -ldflags="-s -w -X main.Version=${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" \
+            -ldflags="-s -w -X main.Version=0.${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" \
             -o "$binary_name" .
 
           if [ "$goos" != "darwin" ]; then
