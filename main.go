@@ -369,14 +369,17 @@ func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable fu
 	go func() {
 		// Process each VM individually to show progress
 		for i, vmName := range vmNames {
+			// Create local copies to avoid closure capturing loop variables
+			vmNameCopy := vmName
+			iCopy := i
 			app.QueueUpdateDraw(func() {
-				showLoading(app, fmt.Sprintf("Stopping VM: %s (%d of %d)", vmName, i+1, len(vmNames)), root)
+				showLoading(app, fmt.Sprintf("Stopping VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
 			})
 
-			_, err := StopVM(vmName)
+			_, err := StopVM(vmNameCopy)
 			if err != nil {
 				app.QueueUpdateDraw(func() {
-					showError(app, "Stop All Error", fmt.Sprintf("Failed to stop %s: %v", vmName, err), root)
+					showError(app, "Stop All Error", fmt.Sprintf("Failed to stop %s: %v", vmNameCopy, err), root)
 				})
 				return
 			}
@@ -411,14 +414,17 @@ func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 	go func() {
 		// Process each VM individually to show progress
 		for i, vmName := range vmNames {
+			// Create local copies to avoid closure capturing loop variables
+			vmNameCopy := vmName
+			iCopy := i
 			app.QueueUpdateDraw(func() {
-				showLoading(app, fmt.Sprintf("Starting VM: %s (%d of %d)", vmName, i+1, len(vmNames)), root)
+				showLoading(app, fmt.Sprintf("Starting VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
 			})
 
-			_, err := StartVM(vmName)
+			_, err := StartVM(vmNameCopy)
 			if err != nil {
 				app.QueueUpdateDraw(func() {
-					showError(app, "Start All Error", fmt.Sprintf("Failed to start %s: %v", vmName, err), root)
+					showError(app, "Start All Error", fmt.Sprintf("Failed to start %s: %v", vmNameCopy, err), root)
 				})
 				return
 			}
