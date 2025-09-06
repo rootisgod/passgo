@@ -267,13 +267,29 @@ func main() {
 
 	flex.AddItem(vmTable, 0, 1, true) // Make the table focusable
 
-	// Create footer with keyboard shortcuts
-	footer := tview.NewTextView()
-	footer.SetBorder(true).SetTitle("Shortcuts")
-	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | m (Manage) | v (Version) | q (Quit)`)
-	footer.SetTextAlign(tview.AlignCenter)
-	footer.SetDynamicColors(true)
-	flex.AddItem(footer, 3, 1, false) // Give footer more height (3 lines)
+	// Create footer with keyboard shortcuts using vertical flex layout
+	footerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
+
+	// First line of shortcuts
+	footerLine1 := tview.NewTextView()
+	footerLine1.SetText("c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover)")
+	footerLine1.SetTextAlign(tview.AlignCenter)
+	footerLine1.SetDynamicColors(true)
+	footerLine1.SetWrap(false)
+
+	// Second line of shortcuts
+	footerLine2 := tview.NewTextView()
+	footerLine2.SetText("! (Purge ALL) | / (Refresh) | s (Shell) | n (New Snapshot) | m (Manage Snapshots) | h (Help) | q (Quit)")
+	footerLine2.SetTextAlign(tview.AlignCenter)
+	footerLine2.SetDynamicColors(true)
+	footerLine2.SetWrap(false)
+
+	// Add both lines to the flex layout
+	footerFlex.AddItem(footerLine1, 1, 1, false)
+	footerFlex.AddItem(footerLine2, 1, 1, false)
+	footerFlex.SetBorder(true).SetTitle("Shortcuts")
+
+	flex.AddItem(footerFlex, 4, 1, false) // Give footer more height (4 lines)
 
 	// Set up the global input capture
 	setupGlobalInputCapture()
