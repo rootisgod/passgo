@@ -38,18 +38,22 @@ jobs:
           "windows/amd64:passgo-windows-amd64.exe"
           "windows/arm64:passgo-windows-arm64.exe"
         )
-        
+
         for platform in "${platforms[@]}"; do
           IFS=':' read -r os_arch binary_name <<< "$platform"
           IFS='/' read -r goos goarch <<< "$os_arch"
-          
+
           echo "Building $binary_name for $goos/$goarch"
           GOOS=$goos GOARCH=$goarch go build \
             -ldflags="-s -w -X main.Version=${{ github.run_number }} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${{ github.sha }}" \
             -o "$binary_name" .
-          
-          echo "Optimizing $binary_name with UPX"
-          upx --best --lzma "$binary_name"
+
+          if [ "$goos" != "darwin" ]; then
+            echo "Optimizing $binary_name with UPX"
+            upx --best --lzma "$binary_name"
+          else
+            echo "Skipping UPX compression for $goos/$goarch"
+          fi
         done
 
     - name: Upload binaries
