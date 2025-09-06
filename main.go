@@ -85,6 +85,10 @@ func setupGlobalInputCapture() {
 			// Manage snapshots
 			manageSnapshots(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
+		case 'v':
+			// Show version
+			showVersion(globalApp, globalRoot)
+			return nil
 		}
 
 		return event
@@ -266,7 +270,7 @@ func main() {
 	// Create footer with keyboard shortcuts
 	footer := tview.NewTextView()
 	footer.SetBorder(true).SetTitle("Shortcuts")
-	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | m (Manage) | q (Quit)`)
+	footer.SetText(`h (Help) | c (Quick Create) | [ (Stop) | ] (Start) | p (Suspend) | < (Stop ALL) | > (Start ALL) | d (Delete) | r (Recover) | ! (Purge ALL) | / (Refresh) | s (Shell) | n (Snapshot) | m (Manage) | v (Version) | q (Quit)`)
 	footer.SetTextAlign(tview.AlignCenter)
 	footer.SetDynamicColors(true)
 	flex.AddItem(footer, 3, 1, false) // Give footer more height (3 lines)
@@ -280,9 +284,19 @@ func main() {
 }
 
 // Helper functions for keyboard shortcuts
+func showVersion(app *tview.Application, root tview.Primitive) {
+	modal := tview.NewModal().
+		SetText(GetVersion()).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			app.SetRoot(root, true)
+		})
+	app.SetRoot(modal, false)
+}
+
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nq: Quit").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)

@@ -31,7 +31,7 @@ tasks:
       - upx gopass-linux-arm64
       - upx gopass-linux-amd64
       - upx gopass-windows-arm64.exe
-      - upx gopass-windows-amd64.exe
+      - upx gopass-windoqws-amd64.exe
 
   delete-builds:
     cmds:
