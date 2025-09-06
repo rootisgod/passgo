@@ -36,6 +36,7 @@ jobs:
           "darwin/amd64:passgo-darwin-amd64"
           "darwin/arm64:passgo-darwin-arm64"
           "windows/amd64:passgo-windows-amd64.exe"
+          "windows/arm64:passgo-windows-arm64.exe"
         )
 
         for platform in "${platforms[@]}"; do
