@@ -37,12 +37,16 @@ func main() {
 		}
 	})
 
-	// Function to populate the table with VMs
-	populateVMTable := func() {
-		// Clear existing rows (keep header)
+	// Helper function to clear VM rows (keep header)
+	clearVMRows := func() {
 		for i := vmTable.GetRowCount() - 1; i > 0; i-- {
 			vmTable.RemoveRow(i)
 		}
+	}
+
+	// Function to populate the table with VMs
+	populateVMTable := func() {
+		clearVMRows()
 
 		output, err := ListVMs()
 		if err != nil {
@@ -107,9 +111,7 @@ func main() {
 		_, err := LaunchVM("test-vm", "22.04")
 		if err != nil {
 			// Show error in table temporarily
-			for i := vmTable.GetRowCount() - 1; i > 0; i-- {
-				vmTable.RemoveRow(i)
-			}
+			clearVMRows()
 			vmTable.SetCell(1, 0, tview.NewTableCell("Launch Error").SetTextColor(tview.Styles.PrimaryTextColor))
 			vmTable.SetCell(1, 1, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
 			vmTable.SetCell(1, 2, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
