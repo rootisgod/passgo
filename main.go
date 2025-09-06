@@ -296,7 +296,7 @@ func main() {
 
 	// Second line of shortcuts
 	footerLine2 := tview.NewTextView()
-	footerLine2.SetText("! (Purge ALL) | / (Refresh) | s (Shell) | n (New Snapshot) | m (Manage Snapshots) | h (Help) | q (Quit)")
+	footerLine2.SetText("! (Purge ALL) | / (Refresh) | s (Interactive Shell) | n (New Snapshot) | m (Manage Snapshots) | h (Help) | q (Quit)")
 	footerLine2.SetTextAlign(tview.AlignCenter)
 	footerLine2.SetDynamicColors(true)
 	footerLine2.SetWrap(false)
@@ -329,7 +329,7 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in the same directory as the binary to use them during VM creation.").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
@@ -702,10 +702,39 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			app.Stop()
-			// Note: This would need to be implemented to actually shell into the VM
-			// For now, we'll just show a message
-			log.Printf("Would shell into VM: %s", vmName)
+
+			// Check if VM is running
+			stateCell := vmTable.GetCell(row, 1)
+			if stateCell == nil || stateCell.Text != "Running" {
+				showError(app, "Shell Error", fmt.Sprintf("VM '%s' is not running. Please start the VM first using the ']' key.", vmName), globalRoot)
+				return
+			}
+
+			// Show a brief message before launching shell
+			showLoading(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
+
+			// Run shell in a goroutine to avoid blocking
+			go func() {
+				// Small delay to show the loading message
+				time.Sleep(500 * time.Millisecond)
+
+				// Suspend the TUI application
+				app.Suspend(func() {
+					// Launch the shell session
+					err := ShellVM(vmName)
+					if err != nil {
+						// If shell fails, show error when we resume
+						log.Printf("Shell session failed: %v", err)
+					}
+				})
+
+				// When we return from the shell, refresh the VM table
+				app.QueueUpdateDraw(func() {
+					globalPopulateVMTable()
+					setupGlobalInputCapture()
+					app.SetRoot(globalRoot, true)
+				})
+			}()
 		}
 	}
 }
