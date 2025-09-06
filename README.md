@@ -14,6 +14,13 @@ go run .
 go build -o gopass
 ```
 
+
+Also install UPX to imnprove binary size
+
+```bash
+brew install upx
+```
+
 ## Multi Platform
 
 ```bash

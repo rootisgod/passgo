@@ -8,17 +8,18 @@ tasks:
 
   build:
     cmds:
-      - go build -o gopass
+      - go build -o gopass -ldflags="-s -w"
       - echo "Build complete. Run ./gopass to start the application."
+      - ls -lah gopass
       
   build-all:
     cmds:
-      - GOOS=darwin  GOARCH=arm64 go build -o gopass-macos-arm64
-      - GOOS=darwin  GOARCH=amd64 go build -o gopass-macos-amd64
-      - GOOS=linux   GOARCH=arm64 go build -o gopass-linux-arm64
-      - GOOS=linux   GOARCH=amd64 go build -o gopass-linux-amd64
-      - GOOS=windows GOARCH=arm64 go build -o gopass-windows-arm64.exe
-      - GOOS=windows GOARCH=amd64 go build -o gopass-windows-amd64.exe
+      - GOOS=darwin  GOARCH=arm64 go build -o gopass-macos-arm64 -ldflags="-s -w"
+      - GOOS=darwin  GOARCH=amd64 go build -o gopass-macos-amd64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=arm64 go build -o gopass-linux-arm64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=amd64 go build -o gopass-linux-amd64 -ldflags="-s -w"
+      - GOOS=windows GOARCH=arm64 go build -o gopass-windows-arm64.exe -ldflags="-s -w"
+      - GOOS=windows GOARCH=amd64 go build -o gopass-windows-amd64.exe -ldflags="-s -w"
 
   delete-builds:
     cmds:
