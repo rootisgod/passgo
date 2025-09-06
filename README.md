@@ -1,41 +1,115 @@
-Install Go
+# PassGo - Multipass VM Manager
 
+A terminal-based GUI for managing Multipass VMs with snapshot support.
+
+## Features
+
+- **VM Management**: Start, stop, suspend, delete VMs
+- **Snapshot Support**: Create, manage, revert, and delete snapshots
+- **Interactive UI**: Terminal-based interface with keyboard shortcuts
+- **Multi-platform**: Supports Linux, macOS, and Windows
+- **Optimized Binaries**: UPX-compressed for smaller download sizes
+
+## Installation
+
+### Download Pre-built Binaries
+
+Download the latest release from the [Releases page](https://github.com/rootisgod/passgo/releases):
+
+- **Linux**: `passgo-linux-amd64` or `passgo-linux-arm64`
+- **macOS**: `passgo-darwin-amd64` or `passgo-darwin-arm64`
+- **Windows**: `passgo-windows-amd64.exe` or `passgo-windows-arm64.exe`
+
+### Build from Source
 
 ```bash
-brew install go
-go mod init githib.com/rootisgod/gopass
-go get github.com/rivo/tview
+# Clone the repository
+git clone https://github.com/rootisgod/passgo.git
+cd passgo
+
+# Install dependencies
+go mod download
+
+# Build
+go build -o passgo
+
+# Or run directly
 go run .
 ```
 
-# Build a Binary
+## Usage
+
+### Keyboard Shortcuts
+
+- `h` - Help
+- `c` - Quick Create VM
+- `[` - Stop selected VM
+- `]` - Start selected VM
+- `p` - Suspend selected VM
+- `<` - Stop all VMs
+- `>` - Start all VMs
+- `d` - Delete selected VM
+- `r` - Recover deleted VM
+- `!` - Purge all VMs
+- `/` - Refresh VM list
+- `s` - Shell into VM
+- `n` - Create snapshot
+- `m` - Manage snapshots
+- `v` - Show version
+- `q` - Quit
+
+### Snapshot Operations
+
+Snapshot operations are only available on stopped VMs:
+
+1. Select a stopped VM
+2. Press `n` to create a snapshot or `m` to manage existing snapshots
+3. Follow the on-screen prompts
+
+## Development
+
+### Prerequisites
+
+- Go 1.24 or later
+- Multipass installed and configured
+
+### Building Multi-platform Binaries
 
 ```bash
-go build -o gopass
+# Linux
+GOOS=linux GOARCH=amd64 go build -o passgo-linux-amd64 .
+GOOS=linux GOARCH=arm64 go build -o passgo-linux-arm64 .
+
+# macOS
+GOOS=darwin GOARCH=amd64 go build -o passgo-darwin-amd64 .
+GOOS=darwin GOARCH=arm64 go build -o passgo-darwin-arm64 .
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o passgo-windows-amd64.exe .
+GOOS=windows GOARCH=arm64 go build -o passgo-windows-arm64.exe .
 ```
 
-
-Also install UPX to imnprove binary size
+### Optimizing Binaries with UPX
 
 ```bash
-brew install upx
+# Install UPX
+brew install upx  # macOS
+sudo apt install upx-ucl  # Ubuntu/Debian
+choco install upx  # Windows
+
+# Compress binaries
+upx --best --lzma passgo-*
 ```
 
-## Multi Platform
+## Automated Releases
 
-```bash
-GOOS=darwin  GOARCH=arm64 go build -o gopass-macos-arm64
-GOOS=darwin  GOARCH=amd64 go build -o gopass-macos-amd64
-GOOS=linux   GOARCH=arm64 go build -o gopass-linux-arm64
-GOOS=linux   GOARCH=amd64 go build -o gopass-linux-amd64
-GOOS=windows GOARCH=arm64 go build -o gopass-windows-arm64.exe
-GOOS=windows GOARCH=amd64 go build -o gopass-windows-amd64.exe
-```
+This project uses GitHub Actions to automatically build and release binaries for all supported platforms when code is pushed to the main branch. Each release includes:
 
-# Update
+- Optimized binaries for Linux (amd64, arm64)
+- Optimized binaries for macOS (amd64, arm64)
+- Optimized binaries for Windows (amd64, arm64)
+- SHA256 checksums for verification
 
-To get new tview version
+## License
 
-```bash
-go get -u github.com/rivo/tview
-```
+This project is open source. Please check the license file for details.
