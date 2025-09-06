@@ -137,6 +137,7 @@ func ScanCloudInitFiles() ([]string, error) {
 		if err != nil {
 			continue // Skip files we can't read
 		}
+		defer fileHandle.Close()
 
 		scanner := bufio.NewScanner(fileHandle)
 		if scanner.Scan() {
@@ -145,7 +146,6 @@ func ScanCloudInitFiles() ([]string, error) {
 				cloudInitFiles = append(cloudInitFiles, fileName)
 			}
 		}
-		fileHandle.Close()
 	}
 
 	return cloudInitFiles, nil
