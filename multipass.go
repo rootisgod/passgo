@@ -75,9 +75,9 @@ func GetVMInfo(name string) (string, error) {
 	return runMultipassCommand("info", name)
 }
 
-// CreateSnapshot creates a snapshot of a VM with the given name
-func CreateSnapshot(vmName, snapshotName string) (string, error) {
-	args := []string{"snapshot", "--name", snapshotName, vmName}
+// CreateSnapshot creates a snapshot of a VM with the given name and description
+func CreateSnapshot(vmName, snapshotName, description string) (string, error) {
+	args := []string{"snapshot", "--name", snapshotName, "--comment", description, vmName}
 	return runMultipassCommand(args...)
 }
 
