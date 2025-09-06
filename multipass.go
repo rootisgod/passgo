@@ -73,6 +73,15 @@ func ExecInVM(vmName string, commandArgs ...string) (string, error) {
 	return runMultipassCommand(args...)
 }
 
+// ShellVM launches an interactive shell session in a VM
+func ShellVM(vmName string) error {
+	cmd := exec.Command("multipass", "shell", vmName)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // GetVMInfo gets detailed info about a VM
 func GetVMInfo(name string) (string, error) {
 	return runMultipassCommand("info", name)
