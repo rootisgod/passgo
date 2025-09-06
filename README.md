@@ -18,7 +18,7 @@ Download the latest release from the [Releases page](https://github.com/rootisgo
 
 - **Linux**: `passgo-linux-amd64` or `passgo-linux-arm64`
 - **macOS**: `passgo-darwin-amd64` or `passgo-darwin-arm64`
-- **Windows**: `passgo-windows-amd64.exe` or `passgo-windows-arm64.exe`
+- **Windows**: `passgo-windows-amd64.exe`
 
 ### Build from Source
 
