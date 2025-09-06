@@ -24,10 +24,11 @@ func main() {
 		}
 	})
 
-	// Set table styling
-	vmTable.SetCell(0, 0, tview.NewTableCell("Name").SetTextColor(tview.Styles.SecondaryTextColor).SetAlign(tview.AlignLeft))
-	vmTable.SetCell(0, 1, tview.NewTableCell("State").SetTextColor(tview.Styles.SecondaryTextColor).SetAlign(tview.AlignLeft))
-	vmTable.SetCell(0, 2, tview.NewTableCell("Image").SetTextColor(tview.Styles.SecondaryTextColor).SetAlign(tview.AlignLeft))
+	// Set table styling with all fields
+	headers := []string{"Name", "State", "Snapshots", "IPv4", "Release", "CPUs", "Disk Usage", "Memory Usage", "Mounts"}
+	for i, header := range headers {
+		vmTable.SetCell(0, i, tview.NewTableCell(header).SetTextColor(tview.Styles.SecondaryTextColor).SetAlign(tview.AlignLeft))
+	}
 
 	// Set initial selection to first VM row (row 1) instead of header (row 0)
 	vmTable.SetSelectionChangedFunc(func(row, column int) {
@@ -44,44 +45,120 @@ func main() {
 		}
 	}
 
-	// Function to populate the table with VMs
+	// VMInfo represents detailed VM information
+	type VMInfo struct {
+		Name        string
+		State       string
+		Snapshots   string
+		IPv4        string
+		Release     string
+		CPUs        string
+		DiskUsage   string
+		MemoryUsage string
+		Mounts      string
+	}
+
+	// Parse detailed VM info from multipass info output
+	parseVMInfo := func(info string) VMInfo {
+		vm := VMInfo{}
+		lines := strings.Split(info, "\n")
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, ":") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
+
+					switch key {
+					case "Name":
+						vm.Name = value
+					case "State":
+						vm.State = value
+					case "Snapshots":
+						vm.Snapshots = value
+					case "IPv4":
+						vm.IPv4 = value
+					case "Release":
+						vm.Release = value
+					case "CPU(s)":
+						vm.CPUs = value
+					case "Disk usage":
+						vm.DiskUsage = value
+					case "Memory usage":
+						vm.MemoryUsage = value
+					case "Mounts":
+						vm.Mounts = value
+					}
+				}
+			}
+		}
+
+		return vm
+	}
+
+	// Function to populate the table with detailed VM info
 	populateVMTable := func() {
 		clearVMRows()
 
-		output, err := ListVMs()
+		// First get the list of VMs
+		listOutput, err := ListVMs()
 		if err != nil {
 			vmTable.SetCell(1, 0, tview.NewTableCell("Error fetching VMs").SetTextColor(tview.Styles.PrimaryTextColor))
-			vmTable.SetCell(1, 1, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
-			vmTable.SetCell(1, 2, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
-		} else {
-			// Parse multipass output and add each VM as a table row
-			lines := strings.Split(output, "\n")
-			row := 1
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
-					continue // Skip header and separator lines
-				}
+			for i := 1; i < 9; i++ {
+				vmTable.SetCell(1, i, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
+			}
+			return
+		}
 
-				// Parse VM line (format: Name State IPv4 Image Release)
-				fields := strings.Fields(line)
-				if len(fields) >= 4 {
-					vmName := fields[0]
-					vmState := fields[1]
-					vmImage := fields[3] // Image is field[3], IPv4 is field[2] (which we skip)
-
-					vmTable.SetCell(row, 0, tview.NewTableCell(vmName).SetTextColor(tview.Styles.PrimaryTextColor))
-					vmTable.SetCell(row, 1, tview.NewTableCell(vmState).SetTextColor(tview.Styles.PrimaryTextColor))
-					vmTable.SetCell(row, 2, tview.NewTableCell(vmImage).SetTextColor(tview.Styles.PrimaryTextColor))
-					row++
-				}
+		// Parse VM names from list output
+		lines := strings.Split(listOutput, "\n")
+		vmNames := []string{}
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
+				continue // Skip header and separator lines
 			}
 
-			if row == 1 {
-				vmTable.SetCell(1, 0, tview.NewTableCell("No VMs found").SetTextColor(tview.Styles.PrimaryTextColor))
-				vmTable.SetCell(1, 1, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
-				vmTable.SetCell(1, 2, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				vmNames = append(vmNames, fields[0])
 			}
+		}
+
+		if len(vmNames) == 0 {
+			vmTable.SetCell(1, 0, tview.NewTableCell("No VMs found").SetTextColor(tview.Styles.PrimaryTextColor))
+			for i := 1; i < 9; i++ {
+				vmTable.SetCell(1, i, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
+			}
+			return
+		}
+
+		// Get detailed info for each VM
+		row := 1
+		for _, vmName := range vmNames {
+			infoOutput, err := GetVMInfo(vmName)
+			if err != nil {
+				// If we can't get detailed info, show basic info
+				vmTable.SetCell(row, 0, tview.NewTableCell(vmName).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 1, tview.NewTableCell("Error").SetTextColor(tview.Styles.PrimaryTextColor))
+				for i := 2; i < 9; i++ {
+					vmTable.SetCell(row, i, tview.NewTableCell("--").SetTextColor(tview.Styles.PrimaryTextColor))
+				}
+			} else {
+				vm := parseVMInfo(infoOutput)
+				vmTable.SetCell(row, 0, tview.NewTableCell(vm.Name).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 1, tview.NewTableCell(vm.State).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 2, tview.NewTableCell(vm.Snapshots).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 3, tview.NewTableCell(vm.IPv4).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 4, tview.NewTableCell(vm.Release).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 5, tview.NewTableCell(vm.CPUs).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 6, tview.NewTableCell(vm.DiskUsage).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 7, tview.NewTableCell(vm.MemoryUsage).SetTextColor(tview.Styles.PrimaryTextColor))
+				vmTable.SetCell(row, 8, tview.NewTableCell(vm.Mounts).SetTextColor(tview.Styles.PrimaryTextColor))
+			}
+			row++
 		}
 
 		// Set selection to first VM row (row 1) after populating
@@ -110,8 +187,9 @@ func main() {
 			// Show error in table temporarily
 			clearVMRows()
 			vmTable.SetCell(1, 0, tview.NewTableCell("Launch Error").SetTextColor(tview.Styles.PrimaryTextColor))
-			vmTable.SetCell(1, 1, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
-			vmTable.SetCell(1, 2, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
+			for i := 1; i < 9; i++ {
+				vmTable.SetCell(1, i, tview.NewTableCell("").SetTextColor(tview.Styles.PrimaryTextColor))
+			}
 		} else {
 			// Refresh the table to show the new VM
 			populateVMTable()
