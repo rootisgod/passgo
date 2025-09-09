@@ -342,7 +342,7 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Show loading popup
 	vmName := "VM-" + randomString(4)
-	showLoading(app, "Creating VM: "+vmName, root)
+	showLoadingAnimated(app, "Creating VM: "+vmName, root)
 
 	// Run the operation in a goroutine to avoid blocking the UI
 	go func() {
@@ -434,7 +434,7 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		}
 
 		// Show loading popup
-		showLoading(app, fmt.Sprintf("Creating VM: %s", vmName), root)
+		showLoadingAnimated(app, fmt.Sprintf("Creating VM: %s", vmName), root)
 
 		// Run the operation in a goroutine to avoid blocking the UI
 		go func() {
@@ -489,7 +489,7 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			showLoading(app, fmt.Sprintf("Stopping VM: %s", vmName), root)
+			showLoadingAnimated(app, fmt.Sprintf("Stopping VM: %s", vmName), root)
 
 			go func() {
 				_, err := StopVM(vmName)
@@ -513,7 +513,7 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
-			showLoading(app, fmt.Sprintf("Starting VM: %s", vmName), root)
+			showLoadingAnimated(app, fmt.Sprintf("Starting VM: %s", vmName), root)
 
 			go func() {
 				_, err := StartVM(vmName)
@@ -563,7 +563,7 @@ func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable fu
 	}
 
 	// Show initial loading with count
-	showLoading(app, fmt.Sprintf("Stopping all VMs (%d total)", len(vmNames)), root)
+	showLoadingAnimated(app, fmt.Sprintf("Stopping all VMs (%d total)", len(vmNames)), root)
 
 	go func() {
 		// Process each VM individually to show progress
@@ -572,7 +572,7 @@ func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable fu
 			vmNameCopy := vmName
 			iCopy := i
 			app.QueueUpdateDraw(func() {
-				showLoading(app, fmt.Sprintf("Stopping VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
+				showLoadingAnimated(app, fmt.Sprintf("Stopping VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
 			})
 
 			_, err := StopVM(vmNameCopy)
@@ -609,7 +609,7 @@ func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 	}
 
 	// Show initial loading with count
-	showLoading(app, fmt.Sprintf("Starting all VMs (%d total)", len(vmNames)), root)
+	showLoadingAnimated(app, fmt.Sprintf("Starting all VMs (%d total)", len(vmNames)), root)
 
 	go func() {
 		// Process each VM individually to show progress
@@ -618,7 +618,7 @@ func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 			vmNameCopy := vmName
 			iCopy := i
 			app.QueueUpdateDraw(func() {
-				showLoading(app, fmt.Sprintf("Starting VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
+				showLoadingAnimated(app, fmt.Sprintf("Starting VM: %s (%d of %d)", vmNameCopy, iCopy+1, len(vmNames)), root)
 			})
 
 			_, err := StartVM(vmNameCopy)
@@ -713,7 +713,7 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 			}
 
 			// Show a brief message before launching shell
-			showLoading(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
+			showLoadingAnimated(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
 
 			// Run shell in a goroutine to avoid blocking
 			go func() {
@@ -830,7 +830,7 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 				}
 
 				// Show loading popup
-				showLoading(app, fmt.Sprintf("Creating snapshot '%s' for VM: %s", snapshotName, vmName), root)
+				showLoadingAnimated(app, fmt.Sprintf("Creating snapshot '%s' for VM: %s", snapshotName, vmName), root)
 
 				// Create snapshot in goroutine
 				go func() {
@@ -1058,11 +1058,35 @@ func showError(app *tview.Application, title, message string, root tview.Primiti
 	app.SetRoot(modal, false)
 }
 
-// showLoading displays a loading popup for long-running operations
-func showLoading(app *tview.Application, message string, root tview.Primitive) {
+// showLoadingAnimated displays a loading popup with animated progress indicator
+func showLoadingAnimated(app *tview.Application, message string, root tview.Primitive) {
+	// Animation frames for rotating indicator
+	frames := []string{"|", "/", "-", "\\"}
+	frameIndex := 0
+
+	// Create a modal-like centered loading popup with initial rotating character
+	initialMessage := fmt.Sprintf("%s\n\n[yellow]%s[::-] Please wait...", message, frames[frameIndex])
 	modal := tview.NewModal().
-		SetText(message + "\n\nPlease wait...").
+		SetText(initialMessage).
 		AddButtons([]string{}) // No buttons - just loading
+
+	// Start animation goroutine
+	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond) // Update every 200ms
+		defer ticker.Stop()
+
+		for range ticker.C {
+			// Update the animation frame
+			animatedMessage := fmt.Sprintf("%s\n\n[yellow]%s[::-] Please wait...", message, frames[frameIndex])
+			app.QueueUpdateDraw(func() {
+				modal.SetText(animatedMessage)
+			})
+
+			// Move to next frame
+			frameIndex = (frameIndex + 1) % len(frames)
+		}
+	}()
+
 	app.SetRoot(modal, false)
 }
 
@@ -1347,7 +1371,7 @@ func showSnapshotActions(app *tview.Application, snapshot SnapshotInfo, populate
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 						if buttonLabel == "Yes" {
 							// Show loading popup
-							showLoading(app, fmt.Sprintf("Reverting %s to snapshot '%s'", snapshot.Instance, snapshot.Name), root)
+							showLoadingAnimated(app, fmt.Sprintf("Reverting %s to snapshot '%s'", snapshot.Instance, snapshot.Name), root)
 
 							// Revert snapshot in goroutine
 							go func() {
@@ -1381,7 +1405,7 @@ func showSnapshotActions(app *tview.Application, snapshot SnapshotInfo, populate
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 						if buttonLabel == "Yes" {
 							// Show loading popup
-							showLoading(app, fmt.Sprintf("Deleting snapshot '%s' of %s", snapshot.Name, snapshot.Instance), root)
+							showLoadingAnimated(app, fmt.Sprintf("Deleting snapshot '%s' of %s", snapshot.Name, snapshot.Instance), root)
 
 							// Delete snapshot in goroutine
 							go func() {
