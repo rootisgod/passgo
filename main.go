@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -383,21 +384,30 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	// Create the form
 	form := tview.NewForm()
 
+	// Instance Name input field
+	form.AddInputField("Instance Name:", "", 20, nil, nil)
+
 	// Instance Type dropdown (default to Ubuntu 24.04)
 	releaseIndex := 3 // Index for "24.04"
 	form.AddDropDown("Instance Type:", releases, releaseIndex, nil)
 
-	// Instance Name input field
-	form.AddInputField("Instance Name:", "", 20, nil, nil)
+	// CPU Cores input field (default 2) - numeric only
+	form.AddInputField("CPU Cores:", "2", 10, func(textToCheck string, lastChar rune) bool {
+		// Only allow digits
+		return lastChar >= '0' && lastChar <= '9'
+	}, nil)
 
-	// CPU Cores input field (default 2)
-	form.AddInputField("CPU Cores:", "2", 10, nil, nil)
+	// RAM input field (default 2048MB) - numeric only
+	form.AddInputField("RAM (MB):", "1024", 10, func(textToCheck string, lastChar rune) bool {
+		// Only allow digits
+		return lastChar >= '0' && lastChar <= '9'
+	}, nil)
 
-	// RAM input field (default 2048MB)
-	form.AddInputField("RAM (MB):", "2048", 10, nil, nil)
-
-	// Disk GB input field (default 8GB)
-	form.AddInputField("Disk (GB):", "8", 10, nil, nil)
+	// Disk GB input field (default 8GB) - numeric only
+	form.AddInputField("Disk (GB):", "8", 10, func(textToCheck string, lastChar rune) bool {
+		// Only allow digits
+		return lastChar >= '0' && lastChar <= '9'
+	}, nil)
 
 	// Cloud-init file dropdown (default to "None")
 	form.AddDropDown("Cloud-init File:", cloudInitOptions, 0, nil)
@@ -405,8 +415,8 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	// Add Create button
 	form.AddButton("Create", func() {
 		// Get form values
-		_, release := form.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
-		vmName := form.GetFormItem(1).(*tview.InputField).GetText()
+		vmName := form.GetFormItem(0).(*tview.InputField).GetText()
+		_, release := form.GetFormItem(1).(*tview.DropDown).GetCurrentOption()
 		cpuText := form.GetFormItem(2).(*tview.InputField).GetText()
 		memoryText := form.GetFormItem(3).(*tview.InputField).GetText()
 		diskText := form.GetFormItem(4).(*tview.InputField).GetText()
@@ -465,6 +475,21 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 
 	form.SetBorder(true).SetTitle("Create New Instance")
 
+	// Create a flex layout to add footer with instructions
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
+
+	// Add the form
+	flex.AddItem(form, 0, 1, true)
+
+	// Add footer with instructions
+	footer := tview.NewTextView()
+	footer.SetText("Use < > to adjust CPU/RAM/Disk values")
+	footer.SetTextAlign(tview.AlignCenter)
+	footer.SetTextColor(tview.Styles.SecondaryTextColor)
+	footer.SetBorder(true).SetTitle("Instructions")
+
+	flex.AddItem(footer, 3, 1, false) // Footer takes 3 lines
+
 	// Temporarily disable global input capture
 	app.SetInputCapture(nil)
 
@@ -476,11 +501,62 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 			app.SetRoot(root, true)
 			return nil
 		}
+
+		// Handle < and , keys for decreasing values
+		if event.Rune() == '<' || event.Rune() == ',' {
+			currentItem, _ := form.GetFocusedItemIndex()
+			// Check if we're on CPU Cores (index 2), RAM (index 3), or Disk (index 4)
+			if currentItem == 2 { // CPU Cores
+				cpuField := form.GetFormItem(2).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(cpuField.GetText()); err == nil && currentVal > 1 {
+					cpuField.SetText(strconv.Itoa(currentVal - 1))
+				}
+				return nil
+			} else if currentItem == 3 { // RAM
+				ramField := form.GetFormItem(3).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(ramField.GetText()); err == nil && currentVal > 1024 {
+					ramField.SetText(strconv.Itoa(currentVal - 1024))
+				}
+				return nil
+			} else if currentItem == 4 { // Disk
+				diskField := form.GetFormItem(4).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(diskField.GetText()); err == nil && currentVal > 8 {
+					diskField.SetText(strconv.Itoa(currentVal - 8))
+				}
+				return nil
+			}
+		}
+
+		// Handle > and . keys for increasing values
+		if event.Rune() == '>' || event.Rune() == '.' {
+			currentItem, _ := form.GetFocusedItemIndex()
+			// Check if we're on CPU Cores (index 2), RAM (index 3), or Disk (index 4)
+			if currentItem == 2 { // CPU Cores
+				cpuField := form.GetFormItem(2).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(cpuField.GetText()); err == nil {
+					cpuField.SetText(strconv.Itoa(currentVal + 1))
+				}
+				return nil
+			} else if currentItem == 3 { // RAM
+				ramField := form.GetFormItem(3).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(ramField.GetText()); err == nil {
+					ramField.SetText(strconv.Itoa(currentVal + 1024))
+				}
+				return nil
+			} else if currentItem == 4 { // Disk
+				diskField := form.GetFormItem(4).(*tview.InputField)
+				if currentVal, err := strconv.Atoi(diskField.GetText()); err == nil {
+					diskField.SetText(strconv.Itoa(currentVal + 8))
+				}
+				return nil
+			}
+		}
+
 		// Let the form handle all other input
 		return event
 	})
 
-	app.SetRoot(form, true)
+	app.SetRoot(flex, true)
 }
 
 func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
