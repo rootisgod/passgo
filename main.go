@@ -801,8 +801,20 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 			// Create a simple form with the input field
 			form := tview.NewForm()
 
-			// Add input field for snapshot name
-			form.AddInputField("Snapshot name", "", 20, nil, nil)
+			// Add input field for snapshot name with space-to-dash conversion
+			form.AddInputField("Snapshot name", "", 20, func(textToCheck string, lastChar rune) bool {
+				// If the last character is a space, replace it with a dash
+				if lastChar == ' ' {
+					// Get the text without the space and add a dash
+					textWithoutSpace := textToCheck[:len(textToCheck)-1]
+					newText := textWithoutSpace + "-"
+					// Update the field with the corrected text
+					snapshotNameField := form.GetFormItem(0).(*tview.InputField)
+					snapshotNameField.SetText(newText)
+					return false // Don't allow the space to be added
+				}
+				return true // Allow all other characters
+			}, nil)
 
 			// Add input field for description with default timestamp
 			timestamp := time.Now().Format("2006-01-02_15-04")
@@ -1084,7 +1096,7 @@ func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
 	nodeMap := make(map[string]*tview.TreeNode)
 
 	// Create root node
-	rootNode := tview.NewTreeNode("📁 Snapshots").SetColor(tview.Styles.SecondaryTextColor)
+	rootNode := tview.NewTreeNode("Snapshots").SetColor(tview.Styles.SecondaryTextColor)
 	rootNode.SetExpanded(true)
 
 	// First pass: create all nodes
@@ -1093,9 +1105,9 @@ func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
 
 		// Add icon based on whether it has children (we'll determine this later)
 		if snapshot.Comment != "" {
-			nodeText = fmt.Sprintf("📸 %s (%s)", snapshot.Name, snapshot.Comment)
+			nodeText = fmt.Sprintf("%s (%s)", snapshot.Name, snapshot.Comment)
 		} else {
-			nodeText = fmt.Sprintf("📸 %s", snapshot.Name)
+			nodeText = snapshot.Name
 		}
 
 		node := tview.NewTreeNode(nodeText)
@@ -1127,12 +1139,12 @@ func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
 	for _, snapshot := range snapshots {
 		node := nodeMap[snapshot.Name]
 		if len(node.GetChildren()) > 0 {
-			// This node has children, update its icon
+			// This node has children, update its text
 			var newText string
 			if snapshot.Comment != "" {
-				newText = fmt.Sprintf("📁 %s (%s)", snapshot.Name, snapshot.Comment)
+				newText = fmt.Sprintf("%s (%s)", snapshot.Name, snapshot.Comment)
 			} else {
-				newText = fmt.Sprintf("📁 %s", snapshot.Name)
+				newText = snapshot.Name
 			}
 			node.SetText(newText)
 		}
