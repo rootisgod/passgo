@@ -789,7 +789,7 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 			}
 
 			// Show a brief message before launching shell
-			showLoadingAnimated(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
+			// showLoadingAnimated(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
 
 			// Run shell in a goroutine to avoid blocking
 			go func() {
