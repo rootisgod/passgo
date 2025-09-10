@@ -788,13 +788,8 @@ func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 				return
 			}
 
-			// Show a brief message before launching shell
-			// showLoadingAnimated(app, fmt.Sprintf("Launching shell session for VM: %s", vmName), globalRoot)
-
 			// Run shell in a goroutine to avoid blocking
 			go func() {
-				// Small delay to show the loading message
-				time.Sleep(500 * time.Millisecond)
 
 				// Suspend the TUI application
 				app.Suspend(func() {
