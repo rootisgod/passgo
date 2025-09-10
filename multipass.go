@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // runMultipassCommand executes a Multipass command and captures output
@@ -76,10 +77,25 @@ func ExecInVM(vmName string, commandArgs ...string) (string, error) {
 // ShellVM launches an interactive shell session in a VM
 func ShellVM(vmName string) error {
 	cmd := exec.Command("multipass", "shell", vmName)
+
+	// Set up the command to use the current terminal
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+
+	// Set the process group to ensure proper signal handling
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	// Start the command
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+
+	// Wait for the command to complete
+	return cmd.Wait()
 }
 
 // GetVMInfo gets detailed info about a VM
