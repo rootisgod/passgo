@@ -1,25 +1,26 @@
-// main.go (for Option 1, same package)
+// main.go - Multipass VM management tool with TUI interface
 package main
 
 import (
-	"fmt"
-	"log"
-	"math/rand"
-	"strconv"
-	"strings"
-	"time"
+	"fmt"       // For formatted printing (like printf in other languages)
+	"log"       // For logging errors and messages
+	"math/rand" // For generating random numbers
+	"strconv"   // For converting strings to numbers and vice versa
+	"strings"   // For string manipulation functions
+	"time"      // For time-related operations
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
+	// External libraries (installed via 'go mod')
+	"github.com/gdamore/tcell/v2" // Terminal UI library for handling keyboard input
+	"github.com/rivo/tview"       // Terminal UI library for creating text-based interfaces
 )
 
-// Global variables for input capture management
-var globalApp *tview.Application
-var globalRoot tview.Primitive
-var globalVMTable *tview.Table
-var globalPopulateVMTable func()
+// Global variables for UI state management
+var globalApp *tview.Application // Pointer to the main TUI application
+var globalRoot tview.Primitive   // The root UI element (main container)
+var globalVMTable *tview.Table   // Pointer to the VM table widget
+var globalPopulateVMTable func() // Function variable to refresh the VM table
 
-// randomString generates a random string of specified length
+// randomString generates random VM names like "VM-a1b2"
 func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	rand.Seed(time.Now().UnixNano())
@@ -30,7 +31,7 @@ func randomString(length int) string {
 	return string(b)
 }
 
-// setupGlobalInputCapture sets up the global input capture
+// setupGlobalInputCapture handles global keyboard shortcuts
 func setupGlobalInputCapture() {
 	globalApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -44,67 +45,51 @@ func setupGlobalInputCapture() {
 			globalApp.Stop()
 			return nil
 		case 'h':
-			// Show help dialog
 			showHelp(globalApp, globalRoot)
 			return nil
 		case 'c':
-			// Quick create instance
 			quickCreateVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'C':
-			// Advanced create instance
 			createAdvancedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '[':
-			// Stop selected instance
 			stopSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case ']':
-			// Start selected instance
 			startSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'p':
-			// Suspend selected instance
 			suspendSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '<':
-			// Stop all instances
 			stopAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '>':
-			// Start all instances
 			startAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'd':
-			// Delete selected instance
 			deleteSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'r':
-			// Recover deleted instances
 			recoverSelectedVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '!':
-			// Purge all deleted instances
 			purgeAllVMs(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case '/':
-			// Refresh VM table
 			globalPopulateVMTable()
 			return nil
 		case 's':
-			// Shell into selected VM
 			shellIntoVM(globalApp, globalVMTable)
 			return nil
 		case 'n':
-			// Create snapshot
 			createSnapshot(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'm':
-			// Manage snapshots
 			manageSnapshots(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
 		case 'v':
-			// Show version
 			showVersion(globalApp, globalRoot)
 			return nil
 		}
@@ -113,44 +98,37 @@ func setupGlobalInputCapture() {
 	})
 }
 
+// main() sets up the TUI and starts the application
 func main() {
 	app := tview.NewApplication()
 	flex := tview.NewFlex().SetDirection(tview.FlexRow)
-
-	// Create selectable VM table
 	vmTable := tview.NewTable()
 	vmTable.SetBorder(true).SetTitle("Multipass VMs")
-	vmTable.SetSelectable(true, false) // Allow row selection, not column selection
+	vmTable.SetSelectable(true, false)
+
 	vmTable.SetSelectedFunc(func(row, column int) {
-		// Only allow selection of VM rows (skip header row 0)
 		if row > 0 {
-			// Handle VM selection - you can add actions here later
 			app.Stop()
 		}
 	})
 
-	// Set table styling with all fields
 	headers := []string{"Name", "State", "Snapshots", "IPv4", "Release", "CPUs", "Disk Usage", "Memory Usage", "Mounts"}
 	for i, header := range headers {
 		vmTable.SetCell(0, i, tview.NewTableCell(header).SetTextColor(tview.Styles.SecondaryTextColor).SetAlign(tview.AlignLeft))
 	}
 
-	// Set initial selection to first VM row (row 1) instead of header (row 0)
 	vmTable.SetSelectionChangedFunc(func(row, column int) {
-		// If we're on the header row, move to the first VM row
 		if row == 0 && vmTable.GetRowCount() > 1 {
 			vmTable.Select(1, 0)
 		}
 	})
 
-	// Helper function to clear VM rows (keep header)
 	clearVMRows := func() {
 		for i := vmTable.GetRowCount() - 1; i > 0; i-- {
 			vmTable.RemoveRow(i)
 		}
 	}
 
-	// VMInfo represents detailed VM information
 	type VMInfo struct {
 		Name        string
 		State       string
@@ -163,15 +141,16 @@ func main() {
 		Mounts      string
 	}
 
-	// Parse detailed VM info from multipass info output
 	parseVMInfo := func(info string) VMInfo {
 		vm := VMInfo{}
 		lines := strings.Split(info, "\n")
 
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
+
 			if strings.Contains(line, ":") {
 				parts := strings.SplitN(line, ":", 2)
+
 				if len(parts) == 2 {
 					key := strings.TrimSpace(parts[0])
 					value := strings.TrimSpace(parts[1])
@@ -203,11 +182,9 @@ func main() {
 		return vm
 	}
 
-	// Function to populate the table with detailed VM info
 	populateVMTable := func() {
 		clearVMRows()
 
-		// First get the list of VMs
 		listOutput, err := ListVMs()
 		if err != nil {
 			vmTable.SetCell(1, 0, tview.NewTableCell("Error fetching VMs").SetTextColor(tview.Styles.PrimaryTextColor))
@@ -217,15 +194,13 @@ func main() {
 			return
 		}
 
-		// Parse VM names from list output
 		lines := strings.Split(listOutput, "\n")
 		vmNames := []string{}
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
-				continue // Skip header and separator lines
+				continue
 			}
-
 			fields := strings.Fields(line)
 			if len(fields) >= 4 {
 				vmNames = append(vmNames, fields[0])
@@ -240,12 +215,12 @@ func main() {
 			return
 		}
 
-		// Get detailed info for each VM
 		row := 1
+
 		for _, vmName := range vmNames {
 			infoOutput, err := GetVMInfo(vmName)
+
 			if err != nil {
-				// If we can't get detailed info, show basic info
 				vmTable.SetCell(row, 0, tview.NewTableCell(vmName).SetTextColor(tview.Styles.PrimaryTextColor))
 				vmTable.SetCell(row, 1, tview.NewTableCell("Error").SetTextColor(tview.Styles.PrimaryTextColor))
 				for i := 2; i < 9; i++ {
@@ -263,55 +238,45 @@ func main() {
 				vmTable.SetCell(row, 7, tview.NewTableCell(vm.MemoryUsage).SetTextColor(tview.Styles.PrimaryTextColor))
 				vmTable.SetCell(row, 8, tview.NewTableCell(vm.Mounts).SetTextColor(tview.Styles.PrimaryTextColor))
 			}
+
 			row++
 		}
 
-		// Set selection to first VM row (row 1) after populating
 		if vmTable.GetRowCount() > 1 {
 			vmTable.Select(1, 0)
 		}
 	}
 
-	// Set global variables for input capture management
 	globalApp = app
 	globalRoot = flex
 	globalVMTable = vmTable
 	globalPopulateVMTable = populateVMTable
 
-	// Fetch and display VMs at startup
 	go func() {
 		app.QueueUpdateDraw(populateVMTable)
 	}()
 
-	flex.AddItem(vmTable, 0, 1, true) // Make the table focusable
+	flex.AddItem(vmTable, 0, 1, true)
 
-	// Create footer with keyboard shortcuts using vertical flex layout
 	footerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
-
-	// First line of shortcuts
 	footerLine1 := tview.NewTextView()
-
-	// Highlight the key letters with bright yellow for better visibility
 	footerLine1.SetText("[yellow]c[white] Quick Create  [yellow]C[white] Advanced Create  [yellow][[white] Stop  [yellow]][white] Start  [yellow]p[white] Suspend  [yellow]<[white] Stop ALL  [yellow]>[white] Start ALL")
 	footerLine1.SetTextAlign(tview.AlignCenter)
 	footerLine1.SetDynamicColors(true)
 	footerLine1.SetWrap(false)
 
-	// Second line of shortcuts with highlighted keys
 	footerLine2 := tview.NewTextView()
 	footerLine2.SetText("[yellow]d[white] Delete  [yellow]r[white] Recover  [yellow]![white] Purge ALL  [yellow]/[white] Refresh  [yellow]s[white] Shell  [yellow]n[white] New Snapshot  [yellow]m[white] Manage Snapshots  [yellow]q[white] Quit")
 	footerLine2.SetTextAlign(tview.AlignCenter)
 	footerLine2.SetDynamicColors(true)
 	footerLine2.SetWrap(false)
 
-	// Add both lines to the flex layout
 	footerFlex.AddItem(footerLine1, 1, 1, false)
 	footerFlex.AddItem(footerLine2, 1, 1, false)
 	footerFlex.SetBorder(true).SetTitle("Shortcuts")
 
-	flex.AddItem(footerFlex, 4, 1, false) // Give footer more height (4 lines)
+	flex.AddItem(footerFlex, 4, 1, false)
 
-	// Set up the global input capture
 	setupGlobalInputCapture()
 
 	if err := app.SetRoot(flex, true).Run(); err != nil {
@@ -319,7 +284,7 @@ func main() {
 	}
 }
 
-// Helper functions for keyboard shortcuts
+// showVersion displays version info in a modal dialog
 func showVersion(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
 		SetText(GetVersion()).
@@ -341,11 +306,9 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 }
 
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	// Show loading popup
 	vmName := "VM-" + randomString(4)
 	showLoadingAnimated(app, "Creating VM: "+vmName, root)
 
-	// Run the operation in a goroutine to avoid blocking the UI
 	go func() {
 		vmName := "VM-" + randomString(4)
 		_, err := LaunchVM(vmName, "24.04")
@@ -355,7 +318,7 @@ func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable
 			} else {
 				populateVMTable()
 				setupGlobalInputCapture()
-				app.SetRoot(root, true) // Return to main interface
+				app.SetRoot(root, true)
 			}
 		})
 	}()
