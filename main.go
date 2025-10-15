@@ -5,9 +5,11 @@ import (
 	"fmt"       // For formatted printing (like printf in other languages)
 	"log"       // For logging errors and messages
 	"math/rand" // For generating random numbers
-	"strconv"   // For converting strings to numbers and vice versa
-	"strings"   // For string manipulation functions
-	"time"      // For time-related operations
+	"os"        // For file operations
+	"path/filepath"
+	"strconv" // For converting strings to numbers and vice versa
+	"strings" // For string manipulation functions
+	"time"    // For time-related operations
 
 	// External libraries (installed via 'go mod')
 	"github.com/gdamore/tcell/v2" // Terminal UI library for handling keyboard input
@@ -19,6 +21,7 @@ var globalApp *tview.Application // Pointer to the main TUI application
 var globalRoot tview.Primitive   // The root UI element (main container)
 var globalVMTable *tview.Table   // Pointer to the VM table widget
 var globalPopulateVMTable func() // Function variable to refresh the VM table
+var appLogger *log.Logger        // File-backed application logger
 
 // randomString generates random VM names like "VM-a1b2"
 func randomString(length int) string {
@@ -100,6 +103,12 @@ func setupGlobalInputCapture() {
 
 // main() sets up the TUI and starts the application
 func main() {
+	// Initialize file logger early
+	if err := initLogger(); err != nil {
+		log.Printf("logger init failed: %v", err)
+	} else {
+		appLogger.Println("passgo starting up")
+	}
 	app := tview.NewApplication()
 	flex := tview.NewFlex().SetDirection(tview.FlexRow)
 	vmTable := tview.NewTable()
@@ -284,6 +293,25 @@ func main() {
 	}
 }
 
+// initLogger creates ~/.passgo/passgo.log and wires a global logger
+func initLogger() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	logDir := filepath.Join(home, ".passgo")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return err
+	}
+	logPath := filepath.Join(logDir, "passgo.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	appLogger = log.New(f, "passgo ", log.LstdFlags|log.Lmicroseconds)
+	return nil
+}
+
 // showVersion displays version info in a modal dialog
 func showVersion(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
@@ -334,15 +362,14 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		"daily",
 	}
 
-	// Scan for cloud-init files
-	cloudInitFiles, err := ScanCloudInitFiles()
-	if err != nil {
-		// If scanning fails, continue without cloud-init option
-		cloudInitFiles = []string{}
+	// Collect cloud-init templates (local + repo via .config)
+	templateOptions, cleanupDirs, _ := GetAllCloudInitTemplateOptions()
+	// Build dropdown labels with a leading "None"
+	cloudInitOptions := make([]string, 0, len(templateOptions)+1)
+	cloudInitOptions = append(cloudInitOptions, "None")
+	for _, opt := range templateOptions {
+		cloudInitOptions = append(cloudInitOptions, opt.Label)
 	}
-
-	// Add "None" option to cloud-init files list
-	cloudInitOptions := append([]string{"None"}, cloudInitFiles...)
 
 	// Create the form
 	form := tview.NewForm()
@@ -383,7 +410,7 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		cpuText := form.GetFormItem(2).(*tview.InputField).GetText()
 		memoryText := form.GetFormItem(3).(*tview.InputField).GetText()
 		diskText := form.GetFormItem(4).(*tview.InputField).GetText()
-		_, cloudInitFile := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+		selectedIndex, selectedLabel := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
 
 		// Validate inputs
 		if vmName == "" {
@@ -412,10 +439,20 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 		// Run the operation in a goroutine to avoid blocking the UI
 		go func() {
 			var err error
-			if cloudInitFile == "None" {
+			// Map selected label to actual file path
+			var selectedPath string
+			if selectedIndex > 0 { // index 0 is "None"
+				// templateOptions is aligned with labels starting at index 1
+				idx := selectedIndex - 1
+				if idx >= 0 && idx < len(templateOptions) {
+					selectedPath = templateOptions[idx].Path
+				}
+			}
+
+			if selectedIndex == 0 || selectedLabel == "None" || selectedPath == "" {
 				_, err = LaunchVMAdvanced(vmName, release, cpus, memoryMB, diskGB)
 			} else {
-				_, err = LaunchVMWithCloudInit(vmName, release, cpus, memoryMB, diskGB, cloudInitFile)
+				_, err = LaunchVMWithCloudInit(vmName, release, cpus, memoryMB, diskGB, selectedPath)
 			}
 			app.QueueUpdateDraw(func() {
 				if err != nil {
@@ -425,6 +462,8 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 					setupGlobalInputCapture()
 					app.SetRoot(root, true) // Return to main interface
 				}
+				// Cleanup any temp dirs from repo clone
+				CleanupTempDirs(cleanupDirs)
 			})
 		}()
 	})

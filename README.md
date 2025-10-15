@@ -6,7 +6,7 @@ A terminal-based GUI for managing Multipass VMs with snapshot support.
 
 - **VM Management**: Start, stop, suspend, delete VMs
 - **Snapshot Support**: Create, manage, revert, and delete snapshots
-- **Cloud-init Support**: Automatically detect and use cloud-init YAML files
+- **Cloud-init Support**: Automatically detect local YAMLs and optional GitHub repo templates
 - **Interactive UI**: Terminal-based interface with keyboard shortcuts
 - **Multi-platform**: Supports Linux, macOS, and Windows
 - **Optimized Binaries**: UPX-compressed for smaller download sizes
@@ -14,6 +14,8 @@ A terminal-based GUI for managing Multipass VMs with snapshot support.
 ## Cloud-init Configuration
 
 PassGo automatically detects cloud-init YAML files in the same directory as the binary and allows you to use them when creating new VMs.
+
+In addition, you can point PassGo at a GitHub repository of cloud-init templates via a local `.config` file. Those repo templates will appear alongside local templates in Advanced Create.
 
 ### Setting Up Cloud-init Files
 
@@ -57,6 +59,27 @@ final_message: "Cloud-init configuration completed successfully!"
 4. **Configure other VM settings** (CPU, RAM, disk, etc.)
 5. **Press Create** to launch the VM with your cloud-init configuration
 
+### Using Templates from a GitHub Repository (.config)
+
+You can add a hidden `.config` file next to the `passgo` binary to pull templates from a GitHub repository:
+
+1. Create a file named `.config` in the same directory as `passgo`
+2. Add a line specifying your repo URL (with or without a leading `@`):
+
+```
+github-cloud-init-repo=@https://github.com/iaingblack/cloud-init-templates
+```
+
+3. Press `C` (Advanced Create). The Cloud-init File dropdown will list:
+   - “None”
+   - Local YAMLs in the current folder
+   - Repo YAMLs, labeled as `repo/<path-in-repo>.yml`
+
+Notes:
+- The repo is cloned shallowly to a temporary directory each time the Advanced Create form is opened.
+- All `.yml`/`.yaml` files in the repo are shown. Local files still require `#cloud-config` as the first line.
+- Example repo: [cloud-init-templates](https://github.com/iaingblack/cloud-init-templates)
+
 ### Supported Cloud-init Features
 
 PassGo supports all standard cloud-init modules, including:
@@ -70,11 +93,25 @@ PassGo supports all standard cloud-init modules, including:
 
 ### File Detection
 
-PassGo automatically scans for files with:
-- `.yml` or `.yaml` extensions
-- First line containing exactly `#cloud-config`
+PassGo scans for templates in two places:
+
+- Local directory (same folder as `passgo`): files must:
+  - have `.yml` or `.yaml` extensions, and
+  - have first line exactly `#cloud-config`
+
+- Optional GitHub repo (configured via `.config`):
+  - all `.yml`/`.yaml` files are listed (no header requirement)
 
 If no cloud-init files are found, the dropdown will only show "None" for standard VM creation.
+
+### Logging
+
+PassGo writes a log file to `~/.passgo/passgo.log` with entries for:
+- Startup
+- Reading `.config`
+- Repo cloning and number of templates found
+- Multipass command executions and any errors
+- Cleanup of temporary directories
 
 ## Installation
 
