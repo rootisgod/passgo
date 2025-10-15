@@ -8,34 +8,34 @@ tasks:
 
   build:
     cmds:
-      - go build -o gopass -ldflags="-s -w"
-      - echo "Build complete. Run ./gopass to start the application."
+      - go build -o passgo -ldflags="-s -w"
+      - echo "Build complete. Run ./passgo to start the application."
       
   build-all:
     cmds:
-      - GOOS=darwin  GOARCH=arm64 go build -o gopass-macos-arm64 -ldflags="-s -w"
-      - GOOS=darwin  GOARCH=amd64 go build -o gopass-macos-amd64 -ldflags="-s -w"
-      - GOOS=linux   GOARCH=arm64 go build -o gopass-linux-arm64 -ldflags="-s -w"
-      - GOOS=linux   GOARCH=amd64 go build -o gopass-linux-amd64 -ldflags="-s -w"
-      - GOOS=windows GOARCH=arm64 go build -o gopass-windows-arm64.exe -ldflags="-s -w"
-      - GOOS=windows GOARCH=amd64 go build -o gopass-windows-amd64.exe -ldflags="-s -w"
+      - GOOS=darwin  GOARCH=arm64 go build -o passgo-macos-arm64 -ldflags="-s -w"
+      - GOOS=darwin  GOARCH=amd64 go build -o passgo-macos-amd64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=arm64 go build -o passgo-linux-arm64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=amd64 go build -o passgo-linux-amd64 -ldflags="-s -w"
+      - GOOS=windows GOARCH=arm64 go build -o passgo-windows-arm64.exe -ldflags="-s -w"
+      - GOOS=windows GOARCH=amd64 go build -o passgo-windows-amd64.exe -ldflags="-s -w"
 
   build-all-upx:
     cmds:
-      - GOOS=darwin  GOARCH=arm64 go build -o gopass-macos-arm64 -ldflags="-s -w"
-      - GOOS=darwin  GOARCH=amd64 go build -o gopass-macos-amd64 -ldflags="-s -w"
-      - GOOS=linux   GOARCH=arm64 go build -o gopass-linux-arm64 -ldflags="-s -w"
-      - GOOS=linux   GOARCH=amd64 go build -o gopass-linux-amd64 -ldflags="-s -w"
-      - GOOS=windows GOARCH=arm64 go build -o gopass-windows-arm64.exe -ldflags="-s -w"
-      - GOOS=windows GOARCH=amd64 go build -o gopass-windows-amd64.exe -ldflags="-s -w"
-      - upx gopass-linux-arm64
-      - upx gopass-linux-amd64
-      - upx gopass-windows-arm64.exe
-      - upx gopass-windoqws-amd64.exe
+      - GOOS=darwin  GOARCH=arm64 go build -o passgo-macos-arm64 -ldflags="-s -w"
+      - GOOS=darwin  GOARCH=amd64 go build -o passgo-macos-amd64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=arm64 go build -o passgo-linux-arm64 -ldflags="-s -w"
+      - GOOS=linux   GOARCH=amd64 go build -o passgo-linux-amd64 -ldflags="-s -w"
+      - GOOS=windows GOARCH=arm64 go build -o passgo-windows-arm64.exe -ldflags="-s -w"
+      - GOOS=windows GOARCH=amd64 go build -o passgo-windows-amd64.exe -ldflags="-s -w"
+      - upx passgo-linux-arm64
+      - upx passgo-linux-amd64
+      - upx passgo-windows-arm64.exe
+      - upx passgo-windoqws-amd64.exe
 
   delete-builds:
     cmds:
-      - rm -f gopass-macos-arm64 gopass-macos-amd64 gopass-linux-arm64 gopass-linux-amd64 gopass-windows-arm64.exe gopass-windows-amd64.exe
+      - rm -f passgo-macos-arm64 passgo-macos-amd64 passgo-linux-arm64 passgo-linux-amd64 passgo-windows-arm64.exe passgo-windows-amd64.exe
       - echo "All builds deleted."
 
   full-test:
