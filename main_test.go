@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -286,5 +287,223 @@ vm2         backup      --        test`
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		parseSnapshots(input)
+	}
+}
+
+// TestParseVMNamesStressTest tests parsing with many VMs
+func TestParseVMNamesStressTest(t *testing.T) {
+	// Build input with 100 VMs
+	var builder strings.Builder
+	builder.WriteString("Name                    State             IPv4             Image\n")
+
+	for i := 0; i < 100; i++ {
+		builder.WriteString(fmt.Sprintf("vm%d                    Running           192.168.64.%d     Ubuntu 22.04 LTS\n", i, i))
+	}
+
+	result := parseVMNames(builder.String())
+
+	if len(result) != 100 {
+		t.Errorf("parseVMNames() stress test: got %d VMs, want 100", len(result))
+	}
+
+	// Verify first and last
+	if result[0] != "vm0" {
+		t.Errorf("First VM = %q, want vm0", result[0])
+	}
+	if result[99] != "vm99" {
+		t.Errorf("Last VM = %q, want vm99", result[99])
+	}
+}
+
+// TestParseSnapshotsComplexHierarchy tests complex parent-child relationships
+func TestParseSnapshotsComplexHierarchy(t *testing.T) {
+	input := `Instance    Snapshot    Parent    Comment
+vm1         base        --        initial
+vm1         dev1        base      development
+vm1         dev2        dev1      feature-x
+vm1         dev3        dev2      feature-y
+vm1         prod1       base      production
+vm1         prod2       prod1     hotfix`
+
+	result := parseSnapshots(input)
+
+	// Should have 6 snapshots total
+	if len(result) != 6 {
+		t.Fatalf("Expected 6 snapshots, got %d", len(result))
+	}
+
+	// Verify hierarchy
+	snapMap := make(map[string]SnapshotInfo)
+	for _, snap := range result {
+		snapMap[snap.Name] = snap
+	}
+
+	// Check base has no parent
+	if snapMap["base"].Parent != "" {
+		t.Errorf("base.Parent = %q, want empty", snapMap["base"].Parent)
+	}
+
+	// Check dev chain
+	if snapMap["dev1"].Parent != "base" {
+		t.Errorf("dev1.Parent = %q, want base", snapMap["dev1"].Parent)
+	}
+	if snapMap["dev2"].Parent != "dev1" {
+		t.Errorf("dev2.Parent = %q, want dev1", snapMap["dev2"].Parent)
+	}
+	if snapMap["dev3"].Parent != "dev2" {
+		t.Errorf("dev3.Parent = %q, want dev2", snapMap["dev3"].Parent)
+	}
+
+	// Check prod chain
+	if snapMap["prod1"].Parent != "base" {
+		t.Errorf("prod1.Parent = %q, want base", snapMap["prod1"].Parent)
+	}
+	if snapMap["prod2"].Parent != "prod1" {
+		t.Errorf("prod2.Parent = %q, want prod1", snapMap["prod2"].Parent)
+	}
+}
+
+// TestSnapshotInfoEquality tests snapshot comparison
+func TestSnapshotInfoEquality(t *testing.T) {
+	snap1 := SnapshotInfo{
+		Instance: "vm1",
+		Name:     "snap1",
+		Parent:   "base",
+		Comment:  "test",
+	}
+
+	snap2 := SnapshotInfo{
+		Instance: "vm1",
+		Name:     "snap1",
+		Parent:   "base",
+		Comment:  "test",
+	}
+
+	snap3 := SnapshotInfo{
+		Instance: "vm1",
+		Name:     "snap1",
+		Parent:   "base",
+		Comment:  "different",
+	}
+
+	if snap1 != snap2 {
+		t.Error("Identical snapshots should be equal")
+	}
+
+	if snap1 == snap3 {
+		t.Error("Snapshots with different comments should not be equal")
+	}
+}
+
+// TestParseVMNamesWithUnicode tests handling of non-ASCII characters
+func TestParseVMNamesWithUnicode(t *testing.T) {
+	input := `Name                    State             IPv4             Image
+vm-测试                  Running           192.168.64.2     Ubuntu 22.04 LTS
+vm-café                 Stopped           --               Ubuntu 20.04 LTS
+vm-🚀                   Suspended         192.168.64.3     Ubuntu 24.04 LTS`
+
+	result := parseVMNames(input)
+
+	expected := []string{"vm-测试", "vm-café", "vm-🚀"}
+
+	if len(result) != len(expected) {
+		t.Fatalf("Got %d VMs, want %d", len(result), len(expected))
+	}
+
+	for i, vmName := range result {
+		if vmName != expected[i] {
+			t.Errorf("VM[%d] = %q, want %q", i, vmName, expected[i])
+		}
+	}
+}
+
+// TestRandomStringDistribution tests character distribution
+func TestRandomStringDistribution(t *testing.T) {
+	// Generate many strings and check that all charset characters appear
+	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
+	charCount := make(map[rune]int)
+
+	iterations := 1000
+	length := 20
+
+	for i := 0; i < iterations; i++ {
+		s := randomString(length)
+		for _, c := range s {
+			charCount[c]++
+		}
+	}
+
+	// Every character in charset should appear at least once in 1000 iterations
+	for _, c := range charset {
+		if charCount[c] == 0 {
+			t.Errorf("Character %c never appeared in %d iterations", c, iterations)
+		}
+	}
+
+	// Total character count should equal iterations * length
+	totalChars := 0
+	for _, count := range charCount {
+		totalChars += count
+	}
+
+	expected := iterations * length
+	if totalChars != expected {
+		t.Errorf("Total characters = %d, want %d", totalChars, expected)
+	}
+}
+
+// TestParseVMNamesRobustness tests parser robustness with unusual input
+func TestParseVMNamesRobustness(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "very long VM name",
+			input:    "Name                    State             IPv4             Image\n" +
+				"this-is-a-very-long-vm-name-that-exceeds-normal-length     Running           192.168.64.2     Ubuntu 22.04 LTS",
+			expected: []string{"this-is-a-very-long-vm-name-that-exceeds-normal-length"},
+		},
+		{
+			name:     "VM name with special characters",
+			input:    "Name                    State             IPv4             Image\n" +
+				"vm-with-dashes          Running           192.168.64.2     Ubuntu 22.04 LTS\n" +
+				"vm_with_underscores     Stopped           --               Ubuntu 20.04 LTS\n" +
+				"vm.with.dots            Running           192.168.64.3     Ubuntu 24.04 LTS",
+			expected: []string{"vm-with-dashes", "vm_with_underscores", "vm.with.dots"},
+		},
+		{
+			name:     "mixed IPv4 formats",
+			input:    "Name                    State             IPv4             Image\n" +
+				"vm1                     Running           192.168.64.2     Ubuntu 22.04 LTS\n" +
+				"vm2                     Running           10.0.0.5,192.168.1.10  Ubuntu 20.04 LTS\n" +
+				"vm3                     Running           N/A              Ubuntu 24.04 LTS",
+			expected: []string{"vm1", "vm2", "vm3"},
+		},
+		{
+			name:     "extra whitespace between columns",
+			input:    "Name                    State             IPv4             Image\n" +
+				"vm1                     Running           192.168.64.2     Ubuntu 22.04 LTS",
+			expected: []string{"vm1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseVMNames(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Got %d VMs, want %d\nGot: %v\nWant: %v",
+					len(result), len(tt.expected), result, tt.expected)
+				return
+			}
+
+			for i, vmName := range result {
+				if vmName != tt.expected[i] {
+					t.Errorf("VM[%d] = %q, want %q", i, vmName, tt.expected[i])
+				}
+			}
+		})
 	}
 }
