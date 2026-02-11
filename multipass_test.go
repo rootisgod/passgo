@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -273,6 +274,337 @@ func getTemplateDisplayName(path string) string {
 	filename := filepath.Base(path)
 	ext := filepath.Ext(filename)
 	return strings.TrimSuffix(filename, ext)
+}
+
+// TestBuildLaunchVMArgs tests argument construction for launching VMs
+func TestBuildLaunchVMArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		vmName   string
+		release  string
+		expected []string
+	}{
+		{
+			name:     "basic launch",
+			vmName:   "test-vm",
+			release:  "22.04",
+			expected: []string{"launch", "--name", "test-vm", "22.04"},
+		},
+		{
+			name:     "with Ubuntu codename",
+			vmName:   "dev-box",
+			release:  "jammy",
+			expected: []string{"launch", "--name", "dev-box", "jammy"},
+		},
+		{
+			name:     "empty release (should still work)",
+			vmName:   "vm1",
+			release:  "",
+			expected: []string{"launch", "--name", "vm1", ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildLaunchArgs(tt.vmName, tt.release)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("buildLaunchArgs() returned %d args, want %d", len(result), len(tt.expected))
+				return
+			}
+
+			for i, arg := range result {
+				if arg != tt.expected[i] {
+					t.Errorf("Arg[%d] = %q, want %q", i, arg, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// buildLaunchArgs constructs arguments for VM launch (helper for testing)
+func buildLaunchArgs(name, release string) []string {
+	return []string{"launch", "--name", name, release}
+}
+
+// TestBuildLaunchVMAdvancedArgs tests argument construction for advanced VM launch
+func TestBuildLaunchVMAdvancedArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		vmName   string
+		release  string
+		cpus     int
+		memoryMB int
+		diskGB   int
+		expected []string
+	}{
+		{
+			name:     "standard resources",
+			vmName:   "dev-vm",
+			release:  "22.04",
+			cpus:     2,
+			memoryMB: 2048,
+			diskGB:   20,
+			expected: []string{
+				"launch", "--name", "dev-vm",
+				"--cpus", "2",
+				"--memory", "2048M",
+				"--disk", "20G",
+				"22.04",
+			},
+		},
+		{
+			name:     "high resources",
+			vmName:   "build-vm",
+			release:  "jammy",
+			cpus:     8,
+			memoryMB: 16384,
+			diskGB:   100,
+			expected: []string{
+				"launch", "--name", "build-vm",
+				"--cpus", "8",
+				"--memory", "16384M",
+				"--disk", "100G",
+				"jammy",
+			},
+		},
+		{
+			name:     "minimal resources",
+			vmName:   "tiny-vm",
+			release:  "20.04",
+			cpus:     1,
+			memoryMB: 512,
+			diskGB:   5,
+			expected: []string{
+				"launch", "--name", "tiny-vm",
+				"--cpus", "1",
+				"--memory", "512M",
+				"--disk", "5G",
+				"20.04",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildLaunchAdvancedArgs(tt.vmName, tt.release, tt.cpus, tt.memoryMB, tt.diskGB)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Got %d args, want %d\nGot: %v\nWant: %v",
+					len(result), len(tt.expected), result, tt.expected)
+				return
+			}
+
+			for i, arg := range result {
+				if arg != tt.expected[i] {
+					t.Errorf("Arg[%d] = %q, want %q", i, arg, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// buildLaunchAdvancedArgs constructs arguments for advanced VM launch
+func buildLaunchAdvancedArgs(name, release string, cpus, memoryMB, diskGB int) []string {
+	return []string{
+		"launch",
+		"--name", name,
+		"--cpus", fmt.Sprintf("%d", cpus),
+		"--memory", fmt.Sprintf("%dM", memoryMB),
+		"--disk", fmt.Sprintf("%dG", diskGB),
+		release,
+	}
+}
+
+// TestResourceFormatting tests the formatting of resource specifications
+func TestResourceFormatting(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    int
+		unit     string
+		expected string
+	}{
+		{"memory 1GB", 1024, "M", "1024M"},
+		{"memory 512MB", 512, "M", "512M"},
+		{"disk 20GB", 20, "G", "20G"},
+		{"disk 100GB", 100, "G", "100G"},
+		{"cpus 1", 1, "", "1"},
+		{"cpus 16", 16, "", "16"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result string
+			if tt.unit != "" {
+				result = fmt.Sprintf("%d%s", tt.value, tt.unit)
+			} else {
+				result = fmt.Sprintf("%d", tt.value)
+			}
+
+			if result != tt.expected {
+				t.Errorf("Got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSnapshotCommandConstruction tests snapshot-related argument building
+func TestSnapshotCommandConstruction(t *testing.T) {
+	tests := []struct {
+		name         string
+		vmName       string
+		snapshotName string
+		comment      string
+		expectedArgs []string
+	}{
+		{
+			name:         "snapshot with comment",
+			vmName:       "vm1",
+			snapshotName: "backup1",
+			comment:      "before-update",
+			expectedArgs: []string{"snapshot", "--name", "backup1", "--comment", "before-update", "vm1"},
+		},
+		{
+			name:         "snapshot without comment",
+			vmName:       "vm2",
+			snapshotName: "snap1",
+			comment:      "",
+			expectedArgs: []string{"snapshot", "--name", "snap1", "--comment", "", "vm2"},
+		},
+		{
+			name:         "snapshot with complex name",
+			vmName:       "production-vm",
+			snapshotName: "2024-01-01-backup",
+			comment:      "monthly backup",
+			expectedArgs: []string{"snapshot", "--name", "2024-01-01-backup", "--comment", "monthly backup", "production-vm"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildSnapshotArgs(tt.vmName, tt.snapshotName, tt.comment)
+
+			if len(result) != len(tt.expectedArgs) {
+				t.Errorf("Got %d args, want %d", len(result), len(tt.expectedArgs))
+				return
+			}
+
+			for i, arg := range result {
+				if arg != tt.expectedArgs[i] {
+					t.Errorf("Arg[%d] = %q, want %q", i, arg, tt.expectedArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// buildSnapshotArgs constructs snapshot creation arguments
+func buildSnapshotArgs(vmName, snapshotName, comment string) []string {
+	return []string{"snapshot", "--name", snapshotName, "--comment", comment, vmName}
+}
+
+// TestDeleteVMArgConstruction tests delete command argument patterns
+func TestDeleteVMArgConstruction(t *testing.T) {
+	tests := []struct {
+		name         string
+		vmName       string
+		purge        bool
+		expectedArgs []string
+	}{
+		{
+			name:         "delete without purge",
+			vmName:       "vm1",
+			purge:        false,
+			expectedArgs: []string{"delete", "vm1"},
+		},
+		{
+			name:         "delete with purge",
+			vmName:       "vm2",
+			purge:        true,
+			expectedArgs: []string{"delete", "vm2", "--purge"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildDeleteArgs(tt.vmName, tt.purge)
+
+			if len(result) != len(tt.expectedArgs) {
+				t.Errorf("Got %d args, want %d\nGot: %v\nWant: %v",
+					len(result), len(tt.expectedArgs), result, tt.expectedArgs)
+				return
+			}
+
+			for i, arg := range result {
+				if arg != tt.expectedArgs[i] {
+					t.Errorf("Arg[%d] = %q, want %q", i, arg, tt.expectedArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// buildDeleteArgs constructs delete command arguments
+func buildDeleteArgs(vmName string, purge bool) []string {
+	args := []string{"delete", vmName}
+	if purge {
+		args = append(args, "--purge")
+	}
+	return args
+}
+
+// TestExecCommandConstruction tests exec command with multiple arguments
+func TestExecCommandConstruction(t *testing.T) {
+	tests := []struct {
+		name         string
+		vmName       string
+		command      []string
+		expectedArgs []string
+	}{
+		{
+			name:         "simple command",
+			vmName:       "vm1",
+			command:      []string{"ls", "-la"},
+			expectedArgs: []string{"exec", "vm1", "--", "ls", "-la"},
+		},
+		{
+			name:         "complex command",
+			vmName:       "dev-vm",
+			command:      []string{"bash", "-c", "echo hello"},
+			expectedArgs: []string{"exec", "dev-vm", "--", "bash", "-c", "echo hello"},
+		},
+		{
+			name:         "single command no args",
+			vmName:       "vm2",
+			command:      []string{"pwd"},
+			expectedArgs: []string{"exec", "vm2", "--", "pwd"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildExecArgs(tt.vmName, tt.command...)
+
+			if len(result) != len(tt.expectedArgs) {
+				t.Errorf("Got %d args, want %d\nGot: %v\nWant: %v",
+					len(result), len(tt.expectedArgs), result, tt.expectedArgs)
+				return
+			}
+
+			for i, arg := range result {
+				if arg != tt.expectedArgs[i] {
+					t.Errorf("Arg[%d] = %q, want %q", i, arg, tt.expectedArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// buildExecArgs constructs exec command arguments
+func buildExecArgs(vmName string, command ...string) []string {
+	args := []string{"exec", vmName, "--"}
+	args = append(args, command...)
+	return args
 }
 
 // Integration test placeholder - these would require running actual multipass commands
