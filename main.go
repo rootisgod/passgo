@@ -26,7 +26,6 @@ var appLogger *log.Logger        // File-backed application logger
 // randomString generates random VM names like "VM-a1b2"
 func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	rand.Seed(time.Now().UnixNano())
 	b := make([]byte, length)
 	for i := range b {
 		b[i] = charset[rand.Intn(len(charset))]

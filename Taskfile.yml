@@ -31,7 +31,7 @@ tasks:
       - upx passgo-linux-arm64
       - upx passgo-linux-amd64
       - upx passgo-windows-arm64.exe
-      - upx passgo-windoqws-amd64.exe
+      - upx passgo-windows-amd64.exe
 
   delete-builds:
     cmds:
