@@ -1,4 +1,4 @@
-module githib.com/rootisgod/gopass
+module github.com/rootisgod/passgo
 
 go 1.24.4
 
