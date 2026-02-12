@@ -58,6 +58,9 @@ func setupGlobalInputCapture() {
 		case '/':
 			globalPopulateVMTable()
 			return nil
+		case 'f':
+			toggleFilter(globalApp, globalMainFlex, globalVMTable, globalFilterInput)
+			return nil
 		case 's':
 			shellIntoVM(globalApp, globalVMTable)
 			return nil
@@ -90,12 +93,72 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 // showHelp displays help modal with keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
 		})
 	app.SetRoot(modal, false)
+}
+
+// toggleFilter shows or hides the filter input field
+func toggleFilter(app *tview.Application, mainFlex *tview.Flex, vmTable *tview.Table, filterInput *tview.InputField) {
+	// Check if filter is already visible
+	filterVisible := false
+	for i := 0; i < 10; i++ {
+		item := mainFlex.GetItem(i)
+		if item == nil {
+			break
+		}
+		if item == filterInput {
+			filterVisible = true
+			break
+		}
+	}
+
+	if filterVisible {
+		// Filter is visible, hide it
+		mainFlex.RemoveItem(filterInput)
+		app.SetFocus(vmTable)
+	} else {
+		// Filter is not visible, show it at the top
+		// Store all current items
+		var items []tview.Primitive
+		var sizes []int
+		var proportions []int
+		var focus []bool
+
+		for i := 0; i < 10; i++ {
+			item := mainFlex.GetItem(i)
+			if item == nil {
+				break
+			}
+			items = append(items, item)
+			// Store size information (approximate)
+			sizes = append(sizes, 0)
+			proportions = append(proportions, 1)
+			focus = append(focus, false)
+		}
+
+		// Clear all items
+		mainFlex.Clear()
+
+		// Add filter first
+		mainFlex.AddItem(filterInput, 1, 0, true)
+
+		// Re-add all other items
+		for i, item := range items {
+			if i == 0 {
+				// This is the vmTable
+				mainFlex.AddItem(item, 0, 1, false)
+			} else {
+				// Other items (footer, etc.)
+				mainFlex.AddItem(item, 4, 1, false)
+			}
+		}
+
+		app.SetFocus(filterInput)
+	}
 }
 
 // showError displays error modal
