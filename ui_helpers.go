@@ -9,9 +9,52 @@ import (
 	"github.com/rivo/tview"
 )
 
+func updateFilterInputStyle(filterInput *tview.InputField, focused bool) {
+	if focused {
+		filterInput.SetLabelColor(tview.Styles.SecondaryTextColor)
+		filterInput.SetFieldTextColor(tview.Styles.PrimaryTextColor)
+		filterInput.SetFieldBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
+		return
+	}
+
+	// Dim the field when filter is active but not focused to indicate
+	// filtering is still applied in the background.
+	if globalFilterText != "" {
+		filterInput.SetLabelColor(tcell.ColorGray)
+		filterInput.SetFieldTextColor(tcell.ColorGray)
+		filterInput.SetFieldBackgroundColor(tcell.ColorBlack)
+		return
+	}
+
+	filterInput.SetLabelColor(tview.Styles.SecondaryTextColor)
+	filterInput.SetFieldTextColor(tview.Styles.PrimaryTextColor)
+	filterInput.SetFieldBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
+}
+
 // setupGlobalInputCapture handles global keyboard shortcuts
 func setupGlobalInputCapture() {
 	globalApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// If filter is visible, Esc should close it instead of quitting.
+		if globalFilterVisible && event.Key() == tcell.KeyEscape {
+			if globalFilterText == "" {
+				globalMainFlex.ResizeItem(globalFilterInput, 0, 0)
+				globalFilterVisible = false
+			}
+			updateFilterInputStyle(globalFilterInput, false)
+			globalApp.SetFocus(globalVMTable)
+			return nil
+		}
+
+		// While the filter box is focused, let the input field consume keys
+		// so typing letters like 's' does not trigger global actions.
+		if globalFilterVisible && globalApp.GetFocus() == globalFilterInput {
+			if event.Key() == tcell.KeyCtrlQ {
+				globalApp.Stop()
+				return nil
+			}
+			return event
+		}
+
 		switch event.Key() {
 		case tcell.KeyCtrlQ, tcell.KeyEscape:
 			globalApp.Stop()
@@ -103,60 +146,26 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 
 // toggleFilter shows or hides the filter input field
 func toggleFilter(app *tview.Application, mainFlex *tview.Flex, vmTable *tview.Table, filterInput *tview.InputField) {
-	// Check if filter is already visible
-	filterVisible := false
-	for i := 0; i < 10; i++ {
-		item := mainFlex.GetItem(i)
-		if item == nil {
-			break
+	if globalFilterVisible {
+		if app.GetFocus() == filterInput {
+			if globalFilterText == "" {
+				// No active filter, so collapse it.
+				mainFlex.ResizeItem(filterInput, 0, 0)
+				globalFilterVisible = false
+			}
+			updateFilterInputStyle(filterInput, false)
+			app.SetFocus(vmTable)
+			return
 		}
-		if item == filterInput {
-			filterVisible = true
-			break
-		}
-	}
 
-	if filterVisible {
-		// Filter is visible, hide it
-		mainFlex.RemoveItem(filterInput)
-		app.SetFocus(vmTable)
+		// Already visible but inactive: focus filter for editing.
+		updateFilterInputStyle(filterInput, true)
+		app.SetFocus(filterInput)
 	} else {
-		// Filter is not visible, show it at the top
-		// Store all current items
-		var items []tview.Primitive
-		var sizes []int
-		var proportions []int
-		var focus []bool
-
-		for i := 0; i < 10; i++ {
-			item := mainFlex.GetItem(i)
-			if item == nil {
-				break
-			}
-			items = append(items, item)
-			// Store size information (approximate)
-			sizes = append(sizes, 0)
-			proportions = append(proportions, 1)
-			focus = append(focus, false)
-		}
-
-		// Clear all items
-		mainFlex.Clear()
-
-		// Add filter first
-		mainFlex.AddItem(filterInput, 1, 0, true)
-
-		// Re-add all other items
-		for i, item := range items {
-			if i == 0 {
-				// This is the vmTable
-				mainFlex.AddItem(item, 0, 1, false)
-			} else {
-				// Other items (footer, etc.)
-				mainFlex.AddItem(item, 4, 1, false)
-			}
-		}
-
+		// Filter is hidden, expand it.
+		mainFlex.ResizeItem(filterInput, 1, 0)
+		globalFilterVisible = true
+		updateFilterInputStyle(filterInput, true)
 		app.SetFocus(filterInput)
 	}
 }

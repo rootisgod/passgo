@@ -26,6 +26,7 @@ var globalSortColumn int      // Current sort column (0=Name, 1=State, etc.)
 var globalSortAscending bool  // Sort direction (true=ascending, false=descending)
 var globalFilterInput *tview.InputField // Filter input field
 var globalMainFlex *tview.Flex          // Main flex container for showing/hiding filter
+var globalFilterVisible bool            // Whether filter input is currently visible
 
 // vmData holds VM information and any errors from fetching it
 type vmData struct {
@@ -277,14 +278,20 @@ func main() {
 	filterInput := tview.NewInputField()
 	filterInput.SetLabel("Filter: ")
 	filterInput.SetFieldWidth(30)
+	updateFilterInputStyle(filterInput, false)
 	filterInput.SetChangedFunc(func(text string) {
 		globalFilterText = text
+		updateFilterInputStyle(filterInput, app.GetFocus() == filterInput)
 		populateVMTable()
 	})
 	filterInput.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEscape || key == tcell.KeyEnter {
-			// Hide filter and restore focus to table
-			flex.RemoveItem(filterInput)
+			// Keep active filters visible, otherwise collapse the filter row.
+			if globalFilterText == "" {
+				flex.ResizeItem(filterInput, 0, 0)
+				globalFilterVisible = false
+			}
+			updateFilterInputStyle(filterInput, false)
 			app.SetFocus(vmTable)
 		}
 	})
@@ -295,11 +302,14 @@ func main() {
 	globalPopulateVMTable = populateVMTable
 	globalFilterInput = filterInput
 	globalMainFlex = flex
+	globalFilterVisible = false
 
 	go func() {
 		app.QueueUpdateDraw(populateVMTable)
 	}()
 
+	// Keep filter input mounted with zero height when hidden.
+	flex.AddItem(filterInput, 0, 0, false)
 	flex.AddItem(vmTable, 0, 1, true)
 
 	footerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
