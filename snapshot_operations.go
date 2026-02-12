@@ -105,6 +105,9 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 	}
 }
 
+// manageSnapshots displays an interactive snapshot management interface for the selected VM.
+// Shows a tree view of snapshots with parent-child relationships and a details panel.
+// Only works on stopped VMs to prevent data corruption.
 func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Check if the selected VM is stopped before allowing access to snapshot management
 	isStopped, vmName := isVMStopped(vmTable)
@@ -243,6 +246,9 @@ func manageSnapshots(app *tview.Application, vmTable *tview.Table, populateVMTab
 	app.SetRoot(flex, true)
 }
 
+// showSnapshotActions displays a modal with revert and delete options for a snapshot.
+// Revert restores the VM to the snapshot state (requires confirmation and VM must be stopped).
+// Delete permanently removes the snapshot (requires confirmation and cannot be undone).
 func showSnapshotActions(app *tview.Application, snapshot SnapshotInfo, populateVMTable func(), root tview.Primitive) {
 	// Create a more detailed modal text
 	var modalText string

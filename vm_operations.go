@@ -10,6 +10,8 @@ import (
 	"github.com/rivo/tview"
 )
 
+// quickCreateVM launches a new VM with default settings and a random name.
+// The VM is created with Ubuntu 24.04 and automatically generated name format "VM-XXXX".
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	vmName := "VM-" + randomString(4)
 	showLoadingAnimated(app, "Creating VM: "+vmName, root)
@@ -29,6 +31,9 @@ func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable
 	}()
 }
 
+// createAdvancedVM displays a form for creating a VM with custom configuration.
+// Allows user to specify: name, Ubuntu release, CPU count, RAM, disk size, and optional cloud-init template.
+// Supports both local cloud-init files and templates from configured GitHub repositories.
 func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Available Ubuntu releases
 	releases := []string{
@@ -238,6 +243,8 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	app.SetRoot(flex, true)
 }
 
+// stopSelectedVM stops the currently selected VM in the table.
+// Displays an animated loading indicator during the operation and refreshes the table on success.
 func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
@@ -262,6 +269,8 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 	}
 }
 
+// startSelectedVM starts the currently selected VM in the table.
+// Displays an animated loading indicator during the operation and refreshes the table on success.
 func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
@@ -286,6 +295,8 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 	}
 }
 
+// suspendSelectedVM suspends the currently selected VM in the table.
+// Suspending saves the VM's current state to disk and frees up system resources.
 func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
@@ -302,6 +313,9 @@ func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMT
 	}
 }
 
+// stopAllVMs stops all running VMs in the system.
+// Displays progress for each VM individually and shows a summary modal when complete.
+// Continues processing remaining VMs even if some fail to stop.
 func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Get list of VMs first
 	listOutput, err := ListVMs()
@@ -348,6 +362,9 @@ func stopAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable fu
 	}()
 }
 
+// startAllVMs starts all VMs in the system.
+// Displays progress for each VM individually and shows a summary modal when complete.
+// Continues processing remaining VMs even if some fail to start.
 func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Get list of VMs first
 	listOutput, err := ListVMs()
@@ -394,6 +411,9 @@ func startAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 	}()
 }
 
+// deleteSelectedVM deletes the currently selected VM after user confirmation.
+// The VM is moved to the recycle bin and can be recovered using recoverSelectedVM.
+// Displays a confirmation dialog before proceeding with deletion.
 func deleteSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
@@ -419,6 +439,8 @@ func deleteSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	}
 }
 
+// recoverSelectedVM recovers a deleted VM from the recycle bin.
+// This operation restores a previously deleted VM back to active status.
 func recoverSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {
@@ -435,6 +457,9 @@ func recoverSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMT
 	}
 }
 
+// purgeAllVMs permanently deletes all VMs in the recycle bin after user confirmation.
+// This operation cannot be undone and removes all deleted VMs from the system.
+// Displays a warning dialog requiring explicit confirmation before proceeding.
 func purgeAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	modal := tview.NewModal().
 		SetText("Are you sure you want to PURGE ALL VMs? This cannot be undone!").
@@ -453,6 +478,9 @@ func purgeAllVMs(app *tview.Application, vmTable *tview.Table, populateVMTable f
 	app.SetRoot(modal, false)
 }
 
+// shellIntoVM launches an interactive shell session inside the selected VM.
+// The TUI is suspended during the shell session and automatically restored when the session ends.
+// Only works on VMs in the "Running" state.
 func shellIntoVM(app *tview.Application, vmTable *tview.Table) {
 	row, _ := vmTable.GetSelection()
 	if row > 0 {

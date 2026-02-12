@@ -76,7 +76,7 @@ func setupGlobalInputCapture() {
 	})
 }
 
-// showVersion displays version info in a modal dialog
+// showVersion displays the application version information in a modal dialog.
 func showVersion(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
 		SetText(GetVersion()).
@@ -87,7 +87,7 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 	app.SetRoot(modal, false)
 }
 
-// showHelp displays help modal with keyboard shortcuts
+// showHelp displays a help modal listing all available keyboard shortcuts and features.
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
 		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.").
@@ -98,7 +98,7 @@ func showHelp(app *tview.Application, root tview.Primitive) {
 	app.SetRoot(modal, false)
 }
 
-// showError displays error modal
+// showError displays an error message in a modal dialog with title and message.
 func showError(app *tview.Application, title, message string, root tview.Primitive) {
 	modal := tview.NewModal().
 		SetText(title + ": " + message).
@@ -109,7 +109,8 @@ func showError(app *tview.Application, title, message string, root tview.Primiti
 	app.SetRoot(modal, false)
 }
 
-// showLoadingAnimated displays a loading popup with animated progress indicator
+// showLoadingAnimated displays a loading popup with an animated rotating indicator.
+// The animation updates every 200ms with frames: | / - \
 func showLoadingAnimated(app *tview.Application, message string, root tview.Primitive) {
 	// Animation frames for rotating indicator
 	frames := []string{"|", "/", "-", "\\"}
@@ -141,7 +142,8 @@ func showLoadingAnimated(app *tview.Application, message string, root tview.Prim
 	app.SetRoot(modal, false)
 }
 
-// buildSnapshotTree creates a tree structure from snapshots showing parent-child relationships
+// buildSnapshotTree creates a hierarchical tree structure from snapshots showing parent-child relationships.
+// Uses a three-pass algorithm: creates nodes, establishes relationships, and updates display text.
 func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
 	// Create a map to store snapshots by name for quick lookup
 	snapshotMap := make(map[string]*SnapshotInfo)
@@ -219,7 +221,8 @@ func buildSnapshotTree(snapshots []SnapshotInfo) *tview.TreeNode {
 	return rootNode
 }
 
-// expandPathToNode expands all nodes in the path to reach the target node
+// expandPathToNode recursively expands all nodes in the path from root to target node.
+// Returns true if the target was found and path was expanded.
 func expandPathToNode(root, target *tview.TreeNode) bool {
 	if root == target {
 		return true

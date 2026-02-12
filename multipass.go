@@ -50,18 +50,22 @@ func LaunchVMAdvanced(name, release string, cpus int, memoryMB int, diskGB int) 
 	return runMultipassCommand(args...)
 }
 
+// ListVMs returns a list of all virtual machines in the system with their current states.
 func ListVMs() (string, error) {
 	return runMultipassCommand("list")
 }
 
+// StopVM stops a running virtual machine.
 func StopVM(name string) (string, error) {
 	return runMultipassCommand("stop", name)
 }
 
+// StartVM starts a stopped or suspended virtual machine.
 func StartVM(name string) (string, error) {
 	return runMultipassCommand("start", name)
 }
 
+// DeleteVM removes a virtual machine. If purge is true, permanently deletes it; otherwise moves it to recycle bin.
 func DeleteVM(name string, purge bool) (string, error) {
 	args := []string{"delete", name}
 	if purge {
@@ -70,11 +74,14 @@ func DeleteVM(name string, purge bool) (string, error) {
 	return runMultipassCommand(args...)
 }
 
+// ExecInVM executes a command inside a running VM and returns the output.
 func ExecInVM(vmName string, commandArgs ...string) (string, error) {
 	args := append([]string{"exec", vmName, "--"}, commandArgs...)
 	return runMultipassCommand(args...)
 }
 
+// ShellVM launches an interactive shell session inside the specified VM.
+// This function connects stdin/stdout/stderr to allow interactive terminal usage.
 func ShellVM(vmName string) error {
 	cmd := exec.Command("multipass", "shell", vmName)
 	cmd.Stdin = os.Stdin
@@ -83,25 +90,30 @@ func ShellVM(vmName string) error {
 	return cmd.Run()
 }
 
+// GetVMInfo retrieves detailed information about a specific virtual machine.
 func GetVMInfo(name string) (string, error) {
 	return runMultipassCommand("info", name)
 }
 
+// CreateSnapshot creates a new snapshot of a VM with the specified name and description.
 func CreateSnapshot(vmName, snapshotName, description string) (string, error) {
 	args := []string{"snapshot", "--name", snapshotName, "--comment", description, vmName}
 	return runMultipassCommand(args...)
 }
 
+// ListSnapshots returns all snapshots across all VMs in the system.
 func ListSnapshots() (string, error) {
 	return runMultipassCommand("list", "--snapshots")
 }
 
+// RestoreSnapshot reverts a VM to a previous snapshot state destructively (discards current state).
 func RestoreSnapshot(vmName, snapshotName string) (string, error) {
 	snapshotID := vmName + "." + snapshotName
 	args := []string{"restore", "--destructive", snapshotID}
 	return runMultipassCommand(args...)
 }
 
+// DeleteSnapshot permanently removes a snapshot from a VM. This operation cannot be undone.
 func DeleteSnapshot(vmName, snapshotName string) (string, error) {
 	snapshotID := vmName + "." + snapshotName
 	args := []string{"delete", "--purge", snapshotID}
@@ -147,6 +159,7 @@ func ScanCloudInitFiles() ([]string, error) {
 	return cloudInitFiles, nil
 }
 
+// LaunchVMWithCloudInit creates a VM with custom resource settings and applies a cloud-init configuration file.
 func LaunchVMWithCloudInit(name, release string, cpus int, memoryMB int, diskGB int, cloudInitFile string) (string, error) {
 	args := []string{
 		"launch",
