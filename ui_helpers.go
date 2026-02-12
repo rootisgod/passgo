@@ -9,9 +9,52 @@ import (
 	"github.com/rivo/tview"
 )
 
+func updateFilterInputStyle(filterInput *tview.InputField, focused bool) {
+	if focused {
+		filterInput.SetLabelColor(tview.Styles.SecondaryTextColor)
+		filterInput.SetFieldTextColor(tview.Styles.PrimaryTextColor)
+		filterInput.SetFieldBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
+		return
+	}
+
+	// Dim the field when filter is active but not focused to indicate
+	// filtering is still applied in the background.
+	if globalFilterText != "" {
+		filterInput.SetLabelColor(tcell.ColorGray)
+		filterInput.SetFieldTextColor(tcell.ColorGray)
+		filterInput.SetFieldBackgroundColor(tcell.ColorBlack)
+		return
+	}
+
+	filterInput.SetLabelColor(tview.Styles.SecondaryTextColor)
+	filterInput.SetFieldTextColor(tview.Styles.PrimaryTextColor)
+	filterInput.SetFieldBackgroundColor(tview.Styles.PrimitiveBackgroundColor)
+}
+
 // setupGlobalInputCapture handles global keyboard shortcuts
 func setupGlobalInputCapture() {
 	globalApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// If filter is visible, Esc should close it instead of quitting.
+		if globalFilterVisible && event.Key() == tcell.KeyEscape {
+			if globalFilterText == "" {
+				globalMainFlex.ResizeItem(globalFilterInput, 0, 0)
+				globalFilterVisible = false
+			}
+			updateFilterInputStyle(globalFilterInput, false)
+			globalApp.SetFocus(globalVMTable)
+			return nil
+		}
+
+		// While the filter box is focused, let the input field consume keys
+		// so typing letters like 's' does not trigger global actions.
+		if globalFilterVisible && globalApp.GetFocus() == globalFilterInput {
+			if event.Key() == tcell.KeyCtrlQ {
+				globalApp.Stop()
+				return nil
+			}
+			return event
+		}
+
 		switch event.Key() {
 		case tcell.KeyCtrlQ, tcell.KeyEscape:
 			globalApp.Stop()
@@ -58,6 +101,9 @@ func setupGlobalInputCapture() {
 		case '/':
 			globalPopulateVMTable()
 			return nil
+		case 'f':
+			toggleFilter(globalApp, globalMainFlex, globalVMTable, globalFilterInput)
+			return nil
 		case 's':
 			shellIntoVM(globalApp, globalVMTable)
 			return nil
@@ -90,12 +136,38 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 // showHelp displays help modal with keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
 		})
 	app.SetRoot(modal, false)
+}
+
+// toggleFilter shows or hides the filter input field
+func toggleFilter(app *tview.Application, mainFlex *tview.Flex, vmTable *tview.Table, filterInput *tview.InputField) {
+	if globalFilterVisible {
+		if app.GetFocus() == filterInput {
+			if globalFilterText == "" {
+				// No active filter, so collapse it.
+				mainFlex.ResizeItem(filterInput, 0, 0)
+				globalFilterVisible = false
+			}
+			updateFilterInputStyle(filterInput, false)
+			app.SetFocus(vmTable)
+			return
+		}
+
+		// Already visible but inactive: focus filter for editing.
+		updateFilterInputStyle(filterInput, true)
+		app.SetFocus(filterInput)
+	} else {
+		// Filter is hidden, expand it.
+		mainFlex.ResizeItem(filterInput, 1, 0)
+		globalFilterVisible = true
+		updateFilterInputStyle(filterInput, true)
+		app.SetFocus(filterInput)
+	}
 }
 
 // showError displays error modal

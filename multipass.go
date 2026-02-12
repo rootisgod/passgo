@@ -70,6 +70,10 @@ func DeleteVM(name string, purge bool) (string, error) {
 	return runMultipassCommand(args...)
 }
 
+func RecoverVM(name string) (string, error) {
+	return runMultipassCommand("recover", name)
+}
+
 func ExecInVM(vmName string, commandArgs ...string) (string, error) {
 	args := append([]string{"exec", vmName, "--"}, commandArgs...)
 	return runMultipassCommand(args...)
