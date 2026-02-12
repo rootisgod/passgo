@@ -11,16 +11,19 @@ import (
 )
 
 func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
-	vmName := "VM-" + randomString(4)
+	vmName := VMNamePrefix + randomString(VMNameRandomLength)
 	showLoadingAnimated(app, "Creating VM: "+vmName, root)
 
 	go func() {
-		vmName := "VM-" + randomString(4)
-		_, err := LaunchVM(vmName, "24.04")
+		vmName := VMNamePrefix + randomString(VMNameRandomLength)
+		appLogger.Printf("Creating VM: %s (release: %s)", vmName, DefaultUbuntuRelease)
+		_, err := LaunchVM(vmName, DefaultUbuntuRelease)
 		app.QueueUpdateDraw(func() {
 			if err != nil {
+				appLogger.Printf("Failed to create VM %s: %v", vmName, err)
 				showError(app, "Launch Error", err.Error(), root)
 			} else {
+				appLogger.Printf("Successfully created VM: %s", vmName)
 				populateVMTable()
 				setupGlobalInputCapture()
 				app.SetRoot(root, true)
@@ -31,13 +34,7 @@ func quickCreateVM(app *tview.Application, vmTable *tview.Table, populateVMTable
 
 func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Available Ubuntu releases
-	releases := []string{
-		"22.04",
-		"20.04",
-		"18.04",
-		"24.04",
-		"daily",
-	}
+	releases := UbuntuReleases
 
 	// Collect cloud-init templates (local + repo via .config)
 	templateOptions, cleanupDirs, _ := GetAllCloudInitTemplateOptions()
@@ -55,23 +52,22 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 	form.AddInputField("Instance Name:", "", 20, nil, nil)
 
 	// Instance Type dropdown (default to Ubuntu 24.04)
-	releaseIndex := 3 // Index for "24.04"
-	form.AddDropDown("Instance Type:", releases, releaseIndex, nil)
+	form.AddDropDown("Instance Type:", releases, DefaultReleaseIndex, nil)
 
 	// CPU Cores input field (default 2) - numeric only
-	form.AddInputField("CPU Cores:", "2", 10, func(textToCheck string, lastChar rune) bool {
+	form.AddInputField("CPU Cores:", fmt.Sprintf("%d", DefaultCPUCores), 10, func(textToCheck string, lastChar rune) bool {
 		// Only allow digits
 		return lastChar >= '0' && lastChar <= '9'
 	}, nil)
 
-	// RAM input field (default 2048MB) - numeric only
-	form.AddInputField("RAM (MB):", "1024", 10, func(textToCheck string, lastChar rune) bool {
+	// RAM input field (default 1024MB) - numeric only
+	form.AddInputField("RAM (MB):", fmt.Sprintf("%d", DefaultRAMMB), 10, func(textToCheck string, lastChar rune) bool {
 		// Only allow digits
 		return lastChar >= '0' && lastChar <= '9'
 	}, nil)
 
 	// Disk GB input field (default 8GB) - numeric only
-	form.AddInputField("Disk (GB):", "8", 10, func(textToCheck string, lastChar rune) bool {
+	form.AddInputField("Disk (GB):", fmt.Sprintf("%d", DefaultDiskGB), 10, func(textToCheck string, lastChar rune) bool {
 		// Only allow digits
 		return lastChar >= '0' && lastChar <= '9'
 	}, nil)
@@ -97,16 +93,16 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 
 		// Parse numeric values
 		var cpus, memoryMB, diskGB int
-		if _, err := fmt.Sscanf(cpuText, "%d", &cpus); err != nil || cpus < 1 {
-			showError(app, "Validation Error", "CPU cores must be a positive integer", root)
+		if _, err := fmt.Sscanf(cpuText, "%d", &cpus); err != nil || cpus < MinCPUCores {
+			showError(app, "Validation Error", fmt.Sprintf("CPU cores must be at least %d", MinCPUCores), root)
 			return
 		}
-		if _, err := fmt.Sscanf(memoryText, "%d", &memoryMB); err != nil || memoryMB < 512 {
-			showError(app, "Validation Error", "RAM must be at least 512MB", root)
+		if _, err := fmt.Sscanf(memoryText, "%d", &memoryMB); err != nil || memoryMB < MinRAMMB {
+			showError(app, "Validation Error", fmt.Sprintf("RAM must be at least %dMB", MinRAMMB), root)
 			return
 		}
-		if _, err := fmt.Sscanf(diskText, "%d", &diskGB); err != nil || diskGB < 1 {
-			showError(app, "Validation Error", "Disk size must be at least 1GB", root)
+		if _, err := fmt.Sscanf(diskText, "%d", &diskGB); err != nil || diskGB < MinDiskGB {
+			showError(app, "Validation Error", fmt.Sprintf("Disk size must be at least %dGB", MinDiskGB), root)
 			return
 		}
 
@@ -127,14 +123,18 @@ func createAdvancedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 			}
 
 			if selectedIndex == 0 || selectedLabel == "None" || selectedPath == "" {
+				appLogger.Printf("Creating advanced VM: %s (release: %s, cpus: %d, ram: %dMB, disk: %dGB)", vmName, release, cpus, memoryMB, diskGB)
 				_, err = LaunchVMAdvanced(vmName, release, cpus, memoryMB, diskGB)
 			} else {
+				appLogger.Printf("Creating VM with cloud-init: %s (release: %s, cpus: %d, ram: %dMB, disk: %dGB, template: %s)", vmName, release, cpus, memoryMB, diskGB, selectedPath)
 				_, err = LaunchVMWithCloudInit(vmName, release, cpus, memoryMB, diskGB, selectedPath)
 			}
 			app.QueueUpdateDraw(func() {
 				if err != nil {
+					appLogger.Printf("Failed to create VM %s: %v", vmName, err)
 					showError(app, "Launch Error", err.Error(), root)
 				} else {
+					appLogger.Printf("Successfully created VM: %s", vmName)
 					populateVMTable()
 					setupGlobalInputCapture()
 					app.SetRoot(root, true) // Return to main interface
@@ -247,11 +247,14 @@ func stopSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTabl
 			showLoadingAnimated(app, fmt.Sprintf("Stopping VM: %s", vmName), root)
 
 			go func() {
+				appLogger.Printf("Stopping VM: %s", vmName)
 				_, err := StopVM(vmName)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
+						appLogger.Printf("Failed to stop VM %s: %v", vmName, err)
 						showError(app, "Stop Error", err.Error(), root)
 					} else {
+						appLogger.Printf("Successfully stopped VM: %s", vmName)
 						populateVMTable()
 						setupGlobalInputCapture()
 						app.SetRoot(root, true) // Return to main interface
@@ -271,11 +274,14 @@ func startSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTab
 			showLoadingAnimated(app, fmt.Sprintf("Starting VM: %s", vmName), root)
 
 			go func() {
+				appLogger.Printf("Starting VM: %s", vmName)
 				_, err := StartVM(vmName)
 				app.QueueUpdateDraw(func() {
 					if err != nil {
+						appLogger.Printf("Failed to start VM %s: %v", vmName, err)
 						showError(app, "Start Error", err.Error(), root)
 					} else {
+						appLogger.Printf("Successfully started VM: %s", vmName)
 						populateVMTable()
 						setupGlobalInputCapture()
 						app.SetRoot(root, true) // Return to main interface
@@ -292,10 +298,13 @@ func suspendSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMT
 		cell := vmTable.GetCell(row, 0)
 		if cell != nil {
 			vmName := cell.Text
+			appLogger.Printf("Suspending VM: %s", vmName)
 			_, err := runMultipassCommand("suspend", vmName)
 			if err != nil {
+				appLogger.Printf("Failed to suspend VM %s: %v", vmName, err)
 				showError(app, "Suspend Error", err.Error(), root)
 			} else {
+				appLogger.Printf("Successfully suspended VM: %s", vmName)
 				populateVMTable()
 			}
 		}
@@ -405,10 +414,13 @@ func deleteSelectedVM(app *tview.Application, vmTable *tview.Table, populateVMTa
 				AddButtons([]string{"Yes", "No"}).
 				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 					if buttonLabel == "Yes" {
+						appLogger.Printf("Deleting VM: %s", vmName)
 						_, err := DeleteVM(vmName, false)
 						if err != nil {
+							appLogger.Printf("Failed to delete VM %s: %v", vmName, err)
 							showError(app, "Delete Error", err.Error(), root)
 						} else {
+							appLogger.Printf("Successfully deleted VM: %s", vmName)
 							populateVMTable()
 						}
 					}
