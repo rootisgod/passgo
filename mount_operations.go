@@ -578,20 +578,9 @@ func showFilePickerAt(app *tview.Application, startDir string, showHidden bool, 
 	tree.SetBorder(true).SetTitle(" Browse Directories" + hiddenLabel + " ")
 	tree.SetBorderPadding(0, 0, 1, 1)
 
-	// Enter expands/collapses; lazy-loads children on first expand
+	// Space expands/collapses; Enter accepts. SetSelectedFunc is overridden by InputCapture.
 	tree.SetSelectedFunc(func(node *tview.TreeNode) {
-		if node.GetReference() == nil {
-			return
-		}
-		if node.IsExpanded() {
-			node.SetExpanded(false)
-		} else {
-			if !loadedNodes[node] {
-				loadChildren(node)
-				loadedNodes[node] = true
-			}
-			node.SetExpanded(true)
-		}
+		// No-op: expand/collapse handled by Space, accept handled by Enter in InputCapture
 	})
 
 	// Update path display when cursor moves
@@ -603,7 +592,7 @@ func showFilePickerAt(app *tview.Application, startDir string, showHidden bool, 
 
 	// --- Instructions ---
 	instructions := tview.NewTextView()
-	instructions.SetText("[yellow]↑↓[white] Navigate  [yellow]Enter[white] Expand  [yellow]Space[white] Select  [yellow]u[white] Go Up  [yellow].[white] Toggle Hidden  [yellow]t[white] Type Path  [yellow]Esc[white] Cancel")
+	instructions.SetText("[yellow]↑↓[white] Navigate  [yellow]Space[white] Expand/Collapse  [yellow]Enter[white] Select  [yellow]u[white] Go Up  [yellow].[white] Toggle Hidden  [yellow]t[white] Type Path  [yellow]Esc[white] Cancel")
 	instructions.SetTextAlign(tview.AlignCenter)
 	instructions.SetDynamicColors(true)
 
@@ -622,12 +611,29 @@ func showFilePickerAt(app *tview.Application, startDir string, showHidden bool, 
 			return nil
 		}
 
-		switch event.Rune() {
-		case ' ':
-			// Select the currently highlighted directory
+		if event.Key() == tcell.KeyEnter {
+			// Accept/select the currently highlighted directory
 			node := tree.GetCurrentNode()
 			if node != nil && node.GetReference() != nil {
 				onSelect(node.GetReference().(string))
+			}
+			return nil
+		}
+
+		switch event.Rune() {
+		case ' ':
+			// Expand/collapse the current folder
+			node := tree.GetCurrentNode()
+			if node != nil && node.GetReference() != nil {
+				if node.IsExpanded() {
+					node.SetExpanded(false)
+				} else {
+					if !loadedNodes[node] {
+						loadChildren(node)
+						loadedNodes[node] = true
+					}
+					node.SetExpanded(true)
+				}
 			}
 			return nil
 
