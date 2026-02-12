@@ -113,6 +113,9 @@ func setupGlobalInputCapture() {
 		case 'm':
 			manageSnapshots(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
 			return nil
+		case 'M':
+			manageMounts(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
+			return nil
 		case 'v':
 			showVersion(globalApp, globalRoot)
 			return nil
@@ -136,7 +139,7 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 // showHelp displays help modal with keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.").
+		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nM: Manage Mounts\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.\n\nMounts: Press 'M' to manage mount points for the selected VM. Add, modify, or remove mounts between your local filesystem and the VM. A built-in file picker lets you browse directories visually.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)

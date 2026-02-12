@@ -320,7 +320,7 @@ func main() {
 	footerLine1.SetWrap(false)
 
 	footerLine2 := tview.NewTextView()
-	footerLine2.SetText("[yellow]d[white] Delete  [yellow]r[white] Recover  [yellow]![white] Purge ALL  [yellow]/[white] Refresh  [yellow]f[white] Filter  [yellow]s[white] Shell  [yellow]n[white] Snapshot  [yellow]m[white] Snapshots  [yellow]q[white] Quit")
+	footerLine2.SetText("[yellow]d[white] Delete  [yellow]r[white] Recover  [yellow]![white] Purge ALL  [yellow]/[white] Refresh  [yellow]f[white] Filter  [yellow]s[white] Shell  [yellow]n[white] Snapshot  [yellow]m[white] Snapshots  [yellow]M[white] Mounts  [yellow]q[white] Quit")
 	footerLine2.SetTextAlign(tview.AlignCenter)
 	footerLine2.SetDynamicColors(true)
 	footerLine2.SetWrap(false)
