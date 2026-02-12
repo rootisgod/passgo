@@ -9,9 +9,8 @@ import (
 	"github.com/rivo/tview"
 )
 
-// TODO: Refactor - setupGlobalInputCapture is duplicated 3 times in this file
-// Consider extracting to helper function: restoreGlobalInputAndRoot()
-
+// createSnapshot displays a form to create a new snapshot for the selected VM.
+// The VM must be in a stopped state before snapshot creation is allowed.
 func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTable func(), root tview.Primitive) {
 	// Check if VM is stopped
 	isStopped, vmName := isVMStopped(vmTable)
@@ -68,71 +67,13 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 				go func() {
 					_, err := CreateSnapshot(vmName, snapshotName, description)
 					app.QueueUpdateDraw(func() {
-						// Restore global input capture
-						app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-							switch event.Key() {
-							case tcell.KeyCtrlQ, tcell.KeyEscape:
-								app.Stop()
-								return nil
-							}
-
-							switch event.Rune() {
-							case 'q':
-								app.Stop()
-								return nil
-							case 'h':
-								showHelp(app, root)
-								return nil
-							case 'c':
-								quickCreateVM(app, vmTable, populateVMTable, root)
-								return nil
-							case 'C':
-								createAdvancedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case '[':
-								stopSelectedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case ']':
-								startSelectedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case 'p':
-								suspendSelectedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case '<':
-								stopAllVMs(app, vmTable, populateVMTable, root)
-								return nil
-							case '>':
-								startAllVMs(app, vmTable, populateVMTable, root)
-								return nil
-							case 'd':
-								deleteSelectedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case 'r':
-								recoverSelectedVM(app, vmTable, populateVMTable, root)
-								return nil
-							case '!':
-								purgeAllVMs(app, vmTable, populateVMTable, root)
-								return nil
-							case '/':
-								populateVMTable()
-								return nil
-							case 's':
-								shellIntoVM(app, vmTable)
-								return nil
-							case 'n':
-								createSnapshot(app, vmTable, populateVMTable, root)
-								return nil
-							}
-
-							return event
-						})
-
 						if err != nil {
+							setupGlobalInputCapture()
 							showError(app, "Snapshot Error", err.Error(), root)
 						} else {
 							populateVMTable()
 							setupGlobalInputCapture()
-							app.SetRoot(root, true) // Return to main interface
+							app.SetRoot(root, true)
 						}
 					})
 				}()
@@ -140,64 +81,7 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 
 			// Add Cancel button
 			form.AddButton("Cancel", func() {
-				// Restore global input capture
-				app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-					switch event.Key() {
-					case tcell.KeyCtrlQ, tcell.KeyEscape:
-						app.Stop()
-						return nil
-					}
-
-					switch event.Rune() {
-					case 'q':
-						app.Stop()
-						return nil
-					case 'h':
-						showHelp(app, root)
-						return nil
-					case 'c':
-						quickCreateVM(app, vmTable, populateVMTable, root)
-						return nil
-					case 'C':
-						createAdvancedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case '[':
-						stopSelectedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case ']':
-						startSelectedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case 'p':
-						suspendSelectedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case '<':
-						stopAllVMs(app, vmTable, populateVMTable, root)
-						return nil
-					case '>':
-						startAllVMs(app, vmTable, populateVMTable, root)
-						return nil
-					case 'd':
-						deleteSelectedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case 'r':
-						recoverSelectedVM(app, vmTable, populateVMTable, root)
-						return nil
-					case '!':
-						purgeAllVMs(app, vmTable, populateVMTable, root)
-						return nil
-					case '/':
-						populateVMTable()
-						return nil
-					case 's':
-						shellIntoVM(app, vmTable)
-						return nil
-					case 'n':
-						createSnapshot(app, vmTable, populateVMTable, root)
-						return nil
-					}
-
-					return event
-				})
+				setupGlobalInputCapture()
 				app.SetRoot(root, true)
 			})
 
@@ -208,70 +92,11 @@ func createSnapshot(app *tview.Application, vmTable *tview.Table, populateVMTabl
 
 			// Set up form-specific input capture
 			form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-				// Handle Escape key to cancel
 				if event.Key() == tcell.KeyEscape {
-					// Restore global input capture
-					app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-						switch event.Key() {
-						case tcell.KeyCtrlQ, tcell.KeyEscape:
-							app.Stop()
-							return nil
-						}
-
-						switch event.Rune() {
-						case 'q':
-							app.Stop()
-							return nil
-						case 'h':
-							showHelp(app, root)
-							return nil
-						case 'c':
-							quickCreateVM(app, vmTable, populateVMTable, root)
-							return nil
-						case 'C':
-							createAdvancedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case '[':
-							stopSelectedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case ']':
-							startSelectedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case 'p':
-							suspendSelectedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case '<':
-							stopAllVMs(app, vmTable, populateVMTable, root)
-							return nil
-						case '>':
-							startAllVMs(app, vmTable, populateVMTable, root)
-							return nil
-						case 'd':
-							deleteSelectedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case 'r':
-							recoverSelectedVM(app, vmTable, populateVMTable, root)
-							return nil
-						case '!':
-							purgeAllVMs(app, vmTable, populateVMTable, root)
-							return nil
-						case '/':
-							populateVMTable()
-							return nil
-						case 's':
-							shellIntoVM(app, vmTable)
-							return nil
-						case 'n':
-							createSnapshot(app, vmTable, populateVMTable, root)
-							return nil
-						}
-
-						return event
-					})
+					setupGlobalInputCapture()
 					app.SetRoot(root, true)
 					return nil
 				}
-				// Let the form handle all other input
 				return event
 			})
 
