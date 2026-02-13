@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -67,6 +68,9 @@ func setupGlobalInputCapture() {
 			return nil
 		case 'h':
 			showHelp(globalApp, globalRoot)
+			return nil
+		case 'i':
+			showVMDetails(globalApp, globalVMTable, globalRoot)
 			return nil
 		case 'c':
 			quickCreateVM(globalApp, globalVMTable, globalPopulateVMTable, globalRoot)
@@ -139,12 +143,79 @@ func showVersion(app *tview.Application, root tview.Primitive) {
 // showHelp displays help modal with keyboard shortcuts
 func showHelp(app *tview.Application, root tview.Primitive) {
 	modal := tview.NewModal().
-		SetText("Keyboard Shortcuts:\n\nh: Help\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nM: Manage Mounts\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.\n\nMounts: Press 'M' to manage mount points for the selected VM. Add, modify, or remove mounts between your local filesystem and the VM. A built-in file picker lets you browse directories visually.").
+		SetText("Keyboard Shortcuts:\n\nh: Help\ni: VM Info\nc: Quick Create\nC: Advanced Create (with cloud-init support)\n[: Stop\n]: Start\np: Suspend\n<: Stop ALL\n>: Start ALL\nd: Delete\nr: Recover\n!: Purge ALL\n/: Refresh\nf: Filter VMs\ns: Shell (interactive session)\nn: Snapshot\nm: Manage Snapshots\nM: Manage Mounts\nv: Version\nq: Quit\n\nCloud-init: Place YAML files with '#cloud-config' header in your current directory to use them during VM creation.\n\nShell: Press 's' to launch an interactive shell session. The TUI will suspend and restore when you exit the shell.\n\nFilter: Press 'f' to filter VMs by name. Press Esc or Enter to close the filter. Click column headers to sort.\n\nMounts: Press 'M' to manage mount points for the selected VM. Add, modify, or remove mounts between your local filesystem and the VM. A built-in file picker lets you browse directories visually.\n\nInfo: Press 'i' to view full details of the selected VM including image hash, load, and all mount information.").
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			app.SetRoot(root, true)
 		})
 	app.SetRoot(modal, false)
+}
+
+// showVMDetails displays full VM info in a scrollable view
+func showVMDetails(app *tview.Application, vmTable *tview.Table, root tview.Primitive) {
+	row, _ := vmTable.GetSelection()
+	if row <= 0 {
+		showError(app, "Error", "No VM selected", root)
+		return
+	}
+
+	vmNameCell := vmTable.GetCell(row, 0)
+	if vmNameCell == nil {
+		showError(app, "Error", "No VM selected", root)
+		return
+	}
+	vmName := vmNameCell.Text
+
+	rawInfo, err := GetVMInfo(vmName)
+	if err != nil {
+		showError(app, "Info Error", err.Error(), root)
+		return
+	}
+
+	// Format output: highlight keys in yellow
+	var formatted strings.Builder
+	for _, line := range strings.Split(rawInfo, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, ":") {
+			parts := strings.SplitN(trimmed, ":", 2)
+			formatted.WriteString(fmt.Sprintf("[yellow]%s:[white]%s\n", parts[0], parts[1]))
+		} else {
+			formatted.WriteString(line + "\n")
+		}
+	}
+
+	// Scrollable text view
+	textView := tview.NewTextView()
+	textView.SetText(formatted.String())
+	textView.SetDynamicColors(true)
+	textView.SetScrollable(true)
+	textView.SetWrap(true)
+	textView.SetBorder(true).SetTitle(fmt.Sprintf(" Info: %s ", vmName))
+	textView.SetBorderPadding(1, 1, 2, 2)
+
+	// Footer instructions
+	instructions := tview.NewTextView()
+	instructions.SetText("[yellow]↑↓[white] Scroll  [yellow]Esc[white] Close")
+	instructions.SetTextAlign(tview.AlignCenter)
+	instructions.SetDynamicColors(true)
+
+	// Layout
+	flex := tview.NewFlex().SetDirection(tview.FlexRow)
+	flex.AddItem(textView, 0, 1, true)
+	flex.AddItem(instructions, 1, 0, false)
+
+	// Input handling
+	app.SetInputCapture(nil)
+	textView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape || event.Key() == tcell.KeyEnter {
+			setupGlobalInputCapture()
+			app.SetRoot(root, true)
+			return nil
+		}
+		return event
+	})
+
+	app.SetRoot(flex, true)
 }
 
 // toggleFilter shows or hides the filter input field

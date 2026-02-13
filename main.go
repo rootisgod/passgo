@@ -314,7 +314,7 @@ func main() {
 
 	footerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
 	footerLine1 := tview.NewTextView()
-	footerLine1.SetText("[yellow]c[white] Quick Create  [yellow]C[white] Advanced Create  [yellow][[white] Stop  [yellow]][white] Start  [yellow]p[white] Suspend  [yellow]<[white] Stop ALL  [yellow]>[white] Start ALL")
+	footerLine1.SetText("[yellow]c[white] Quick Create  [yellow]C[white] Advanced Create  [yellow][[white] Stop  [yellow]][white] Start  [yellow]p[white] Suspend  [yellow]<[white] Stop ALL  [yellow]>[white] Start ALL  [yellow]i[white] Info")
 	footerLine1.SetTextAlign(tview.AlignCenter)
 	footerLine1.SetDynamicColors(true)
 	footerLine1.SetWrap(false)
