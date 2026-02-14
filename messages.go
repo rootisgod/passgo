@@ -58,6 +58,9 @@ type backToTableMsg struct{}
 // autoRefreshTickMsg fires periodically to trigger a background VM list refresh.
 type autoRefreshTickMsg time.Time
 
+// infoRefreshTickMsg fires periodically to refresh the VM info detail view.
+type infoRefreshTickMsg time.Time
+
 // ─── Auto-Refresh ──────────────────────────────────────────────────────────────
 
 const autoRefreshInterval = 1 * time.Second
