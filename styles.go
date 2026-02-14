@@ -12,7 +12,6 @@ var (
 	dimmed      = lipgloss.Color("#4A4A4A") // darker gray
 	highlight   = lipgloss.Color("#E8E8E8") // bright white
 	surface     = lipgloss.Color("#2A2A2A") // dark surface
-	surfaceAlt  = lipgloss.Color("#1E1E1E") // zebra stripe
 	runningClr  = lipgloss.Color("#10B981") // green
 	stoppedClr  = lipgloss.Color("#EF4444") // red
 	suspendClr  = lipgloss.Color("#F59E0B") // amber
@@ -42,20 +41,16 @@ var (
 	tableHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(accent).
-				PaddingRight(2)
+				PaddingRight(1)
 
 	tableCellStyle = lipgloss.NewStyle().
-			PaddingRight(2)
+			Foreground(lipgloss.Color("#BBBBBB")).
+			PaddingRight(1)
 
-	tableCellAltStyle = lipgloss.NewStyle().
-				PaddingRight(2).
-				Background(surfaceAlt)
-
-	tableSelectedStyle = lipgloss.NewStyle().
-				Background(surface).
+	tableSelectedCellStyle = lipgloss.NewStyle().
 				Foreground(highlight).
 				Bold(true).
-				PaddingRight(2)
+				PaddingRight(1)
 
 	tableCursorStyle = lipgloss.NewStyle().
 				Foreground(accent).
@@ -65,6 +60,16 @@ var (
 			Foreground(subtle).
 			Italic(true).
 			PaddingLeft(3)
+
+	tableBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(accent)
+
+	tableColDivStyle = lipgloss.NewStyle().
+				Foreground(dimmed)
+
+	tableHeaderDivStyle = lipgloss.NewStyle().
+				Foreground(accent)
 )
 
 // ─── Footer ────────────────────────────────────────────────────────────────────
@@ -188,8 +193,7 @@ var (
 			PaddingLeft(2)
 
 	listSelectedItemStyle = lipgloss.NewStyle().
-				PaddingLeft(2).
-				Background(surface).
+				PaddingLeft(1).
 				Foreground(highlight).
 				Bold(true)
 

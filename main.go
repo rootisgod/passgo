@@ -612,15 +612,11 @@ func sortVMs(vms []vmData, column int, ascending bool) {
 			case 3:
 				compare = vms[j].info.IPv4 > vms[j+1].info.IPv4
 			case 4:
-				compare = vms[j].info.Release > vms[j+1].info.Release
-			case 5:
 				compare = vms[j].info.CPUs > vms[j+1].info.CPUs
-			case 6:
+			case 5:
 				compare = vms[j].info.DiskUsage > vms[j+1].info.DiskUsage
-			case 7:
+			case 6:
 				compare = vms[j].info.MemoryUsage > vms[j+1].info.MemoryUsage
-			case 8:
-				compare = vms[j].info.Mounts > vms[j+1].info.Mounts
 			default:
 				compare = false
 			}

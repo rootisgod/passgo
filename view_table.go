@@ -14,8 +14,11 @@ import (
 
 // Column definitions for the VM table.
 type tableColumn struct {
-	title string
-	width int
+	title    string
+	width    int
+	minWidth int  // smallest usable width before hiding
+	priority int  // lower = more important, hidden last
+	hidden   bool // set dynamically based on terminal width
 }
 
 // busyInfo tracks an in-flight inline operation for a VM.
@@ -104,15 +107,13 @@ func newTableModel() tableModel {
 		busyVMs:       make(map[string]busyInfo),
 		spinner:       s,
 		columns: []tableColumn{
-			{title: "Name", width: 18},
-			{title: "State", width: 12},
-			{title: "Snaps", width: 7},
-			{title: "IPv4", width: 16},
-			{title: "Release", width: 22},
-			{title: "CPU", width: 14},
-			{title: "Disk", width: 18},
-			{title: "Memory", width: 18},
-			{title: "Mounts", width: 8},
+			{title: "Name", width: 12, minWidth: 8, priority: 0},  // width set dynamically
+			{title: "State", width: 12, minWidth: 10, priority: 0},
+			{title: "Snaps", width: 7, minWidth: 5, priority: 5},
+			{title: "IPv4", width: 16, minWidth: 12, priority: 2},
+			{title: "CPU", width: 14, minWidth: 8, priority: 3},
+			{title: "Disk", width: 18, minWidth: 8, priority: 3},
+			{title: "Memory", width: 18, minWidth: 8, priority: 3},
 		},
 	}
 }
@@ -257,10 +258,18 @@ func (m tableModel) Update(msg tea.Msg) (tableModel, tea.Cmd) {
 }
 
 func (m tableModel) visibleRows() int {
-	// title(1) + header(1) + sep(1) + footer_sep(1) + footer(3) + spacing(1)
-	used := 8
+	// title(1) + box_border(2) + header(1) + sep(1) + spacing(1) = 6
+	used := 6
 	if m.filterVisible {
 		used++
+	}
+	// Footer lines vary by width
+	if m.width >= 100 {
+		used += 4 // 2 shortcut lines + status + sep
+	} else if m.width >= 60 {
+		used += 5 // 3 shortcut lines + status + sep
+	} else {
+		used += 3 // 1 shortcut line + status + sep
 	}
 	return max(1, m.height-used)
 }
@@ -270,42 +279,70 @@ func (m tableModel) visibleRows() int {
 func (m tableModel) View() string {
 	var b strings.Builder
 
-	// ── Title bar (full-width accent background) ──
+	// ── Title bar (full-width accent background, never wraps) ──
 	vmCount := len(m.filteredVMs)
 	totalCount := len(m.vms)
 	countText := fmt.Sprintf(" %d VMs", totalCount)
 	if vmCount != totalCount {
 		countText = fmt.Sprintf(" %d/%d VMs", vmCount, totalCount)
 	}
-	liveIndicator := titleLiveStyle.Render(" ● LIVE")
-	titleText := titleBarStyle.Render(" ◆ Multipass") +
-		titleVMCountStyle.Render(countText) +
-		liveIndicator
+	liveIndicator := " ● LIVE"
 
-	// Pad the title bar to full terminal width
+	w := m.width
+	if w < 1 {
+		w = 80
+	}
+
+	// Build title bar content that fits within terminal width
+	titleLabel := " ◆ Multipass"
+	bgStyle := lipgloss.NewStyle().Background(accent)
+	needed := lipgloss.Width(titleLabel) + lipgloss.Width(countText) + lipgloss.Width(liveIndicator)
+
+	var titleText string
+	if needed <= w {
+		// Everything fits
+		titleText = titleBarStyle.Render(titleLabel) +
+			titleVMCountStyle.Render(countText) +
+			titleLiveStyle.Render(liveIndicator)
+	} else if lipgloss.Width(titleLabel)+lipgloss.Width(countText) <= w {
+		// Drop the LIVE indicator
+		titleText = titleBarStyle.Render(titleLabel) +
+			titleVMCountStyle.Render(countText)
+	} else {
+		// Just the title
+		titleText = titleBarStyle.Render(titleLabel)
+	}
+
+	// Pad to exactly terminal width (no overflow)
 	titleVisibleWidth := lipgloss.Width(titleText)
-	if m.width > titleVisibleWidth {
-		pad := strings.Repeat(" ", m.width-titleVisibleWidth)
-		titleText += lipgloss.NewStyle().Background(accent).Render(pad)
+	if w > titleVisibleWidth {
+		pad := strings.Repeat(" ", w-titleVisibleWidth)
+		titleText += bgStyle.Render(pad)
 	}
 	b.WriteString(titleText + "\n")
 
 	// ── Filter bar ──
 	if m.filterVisible {
 		if m.filterFocused {
-			b.WriteString("  " + filterIconStyle.Render("⌕ ") + m.filterInput.View() + "\n")
+			b.WriteString(" " + filterIconStyle.Render("⌕ ") + m.filterInput.View() + "\n")
 		} else {
-			dim := "  " + filterIconStyle.Render("⌕ ") + filterInactiveStyle.Render(m.filterText)
+			dim := " " + filterIconStyle.Render("⌕ ") + filterInactiveStyle.Render(m.filterText)
 			b.WriteString(dim + "\n")
 		}
 	}
 
 	// Compute dynamic column widths
 	cols := m.computeColumnWidths()
+	div := tableColDivStyle.Render("│")
+	headerDiv := tableHeaderDivStyle.Render("│")
 
-	// ── Header row ──
+	// ── Header row with column dividers ──
 	var headerCells []string
+	first := true
 	for i, col := range cols {
+		if col.hidden {
+			continue
+		}
 		title := col.title
 		if i == m.sortColumn {
 			if m.sortAscending {
@@ -314,43 +351,72 @@ func (m tableModel) View() string {
 				title += " ▼"
 			}
 		}
-		headerCells = append(headerCells, tableHeaderStyle.Width(col.width).Render(title))
+		cell := tableHeaderStyle.Width(col.width).Render(title)
+		if !first {
+			cell = headerDiv + cell
+		}
+		first = false
+		headerCells = append(headerCells, cell)
 	}
-	b.WriteString("  " + strings.Join(headerCells, "") + "\n")
+	headerRow := " " + strings.Join(headerCells, "")
 
-	// ── Separator ──
-	sepLen := 0
+	// ── Header separator with column intersections ──
+	var sepParts []string
+	first = true
 	for _, c := range cols {
-		sepLen += c.width
+		if c.hidden {
+			continue
+		}
+		if !first {
+			sepParts = append(sepParts, tableColDivStyle.Render("┼"))
+		}
+		first = false
+		sepParts = append(sepParts, lipgloss.NewStyle().Foreground(dimmed).Render(strings.Repeat("─", c.width)))
 	}
-	sep := lipgloss.NewStyle().Foreground(dimmed).Render(strings.Repeat("─", min(sepLen+2, m.width)))
-	b.WriteString("  " + sep + "\n")
+	sepRow := " " + strings.Join(sepParts, "")
 
-	// ── Rows ──
+	// ── Rows with column dividers ──
 	visible := m.visibleRows()
+	var rows []string
 	if len(m.filteredVMs) == 0 {
-		b.WriteString(tableEmptyStyle.Render("  No VMs found") + "\n")
+		rows = append(rows, tableEmptyStyle.Render(" No VMs found"))
 	} else {
 		end := min(m.offset+visible, len(m.filteredVMs))
 		for i := m.offset; i < end; i++ {
 			vm := m.filteredVMs[i]
 			selected := i == m.cursor
-			isAlt := (i-m.offset)%2 == 1
-			b.WriteString(m.renderRow(vm, cols, selected, isAlt) + "\n")
+			rows = append(rows, m.renderRow(vm, cols, selected, div))
 		}
 	}
 
-	// Pad remaining space
-	rendered := len(m.filteredVMs) - m.offset
-	if rendered < 0 {
-		rendered = 0
-	}
-	if rendered > visible {
-		rendered = visible
-	}
+	// Pad remaining rows
+	rendered := len(rows)
 	for i := rendered; i < visible; i++ {
-		b.WriteString("\n")
+		rows = append(rows, "")
 	}
+
+	// ── Build table content inside a box ──
+	tableContent := headerRow + "\n" + sepRow + "\n" + strings.Join(rows, "\n")
+
+	// Calculate box width: sum of visible columns + dividers + padding
+	tableWidth := 2 // left padding
+	visibleCols := 0
+	for _, c := range cols {
+		if !c.hidden {
+			tableWidth += c.width
+			visibleCols++
+		}
+	}
+	if visibleCols > 1 {
+		tableWidth += visibleCols - 1 // divider characters
+	}
+
+	boxWidth := min(tableWidth+4, m.width-2)
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
+	tableBox := tableBorderStyle.Width(boxWidth).Render(tableContent)
+	b.WriteString(tableBox + "\n")
 
 	// Footer
 	b.WriteString(m.renderFooter())
@@ -362,57 +428,129 @@ func (m tableModel) computeColumnWidths() []tableColumn {
 	cols := make([]tableColumn, len(m.columns))
 	copy(cols, m.columns)
 
-	// Compute total minimum width
-	total := 0
-	for _, c := range cols {
-		total += c.width
-	}
-	total += 4 // cursor prefix + padding
+	// Available width: terminal minus border(2) + prefix(1) + padding
+	avail := m.width - 5
 
-	// If terminal is wider, expand Name and Release columns
-	extra := m.width - total
-	if extra > 0 {
-		cols[0].width += min(extra/2, 12) // Name
-		extra -= min(extra/2, 12)
-		if extra > 0 {
-			cols[4].width += min(extra, 10) // Release
+	// Reset hidden state
+	for i := range cols {
+		cols[i].hidden = false
+	}
+
+	// Size Name column to fit the longest VM name (+2 for padding)
+	maxName := len("Name") // at least as wide as the header
+	for _, vm := range m.filteredVMs {
+		if l := lipgloss.Width(vm.info.Name); l > maxName {
+			maxName = l
+		}
+	}
+	nameWidth := maxName + 2
+	if nameWidth < cols[0].minWidth {
+		nameWidth = cols[0].minWidth
+	}
+	cols[0].width = nameWidth
+
+	// Calculate total width at preferred sizes
+	totalWidth := func() int {
+		w := 0
+		dividers := 0
+		for _, c := range cols {
+			if !c.hidden {
+				w += c.width
+				dividers++
+			}
+		}
+		if dividers > 0 {
+			dividers-- // n-1 dividers
+		}
+		return w + dividers
+	}
+
+	// Phase 1: Shrink columns to their minimum widths (lowest priority first)
+	if totalWidth() > avail {
+		for shrinkPri := 6; shrinkPri >= 0; shrinkPri-- {
+			for i := range cols {
+				if cols[i].hidden || cols[i].priority != shrinkPri {
+					continue
+				}
+				if cols[i].width > cols[i].minWidth {
+					cols[i].width = cols[i].minWidth
+				}
+			}
+			if totalWidth() <= avail {
+				break
+			}
+		}
+	}
+
+	// Phase 2: Hide columns by priority (highest number = least important)
+	if totalWidth() > avail {
+		for hidePri := 6; hidePri >= 1; hidePri-- {
+			for i := range cols {
+				if cols[i].priority == hidePri {
+					cols[i].hidden = true
+				}
+			}
+			if totalWidth() <= avail {
+				break
+			}
+		}
+	}
+
+	// Phase 3: If wider than needed, distribute extra to resource columns and IPv4
+	extra := avail - totalWidth()
+	if extra > 0 && !cols[3].hidden {
+		add := min(extra, 6) // IPv4
+		cols[3].width += add
+		extra -= add
+	}
+	// Spread remaining to CPU, Disk, Memory evenly
+	for _, idx := range []int{4, 5, 6} {
+		if extra <= 0 {
+			break
+		}
+		if idx < len(cols) && !cols[idx].hidden {
+			add := min(extra, 4)
+			cols[idx].width += add
+			extra -= add
 		}
 	}
 
 	return cols
 }
 
-func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool, isAlt bool) string {
+func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool, div string) string {
 	busy, isBusy := m.busyVMs[vm.info.Name]
 
-	prefix := "  "
+	// Selection indicator: accent bar or space
+	prefix := " "
 	if selected {
-		prefix = tableCursorStyle.Render("▸ ")
+		prefix = tableCursorStyle.Render("▎")
 	}
 
-	// ── Busy row: Name + animated progress bar spanning remaining columns ──
-	if isBusy {
-		// Render name column
-		nameStyle := tableCellStyle.Width(cols[0].width)
+	// Cell style helper
+	cellStyle := func(width int) lipgloss.Style {
 		if selected {
-			nameStyle = tableSelectedStyle.Width(cols[0].width)
+			return tableSelectedCellStyle.Width(width)
 		}
-		nameCell := nameStyle.Render(vm.info.Name)
+		return tableCellStyle.Width(width)
+	}
 
-		// Calculate width for the progress area (all columns after Name)
+	// ── Busy row ──
+	if isBusy {
+		nameCell := cellStyle(cols[0].width).Render(vm.info.Name)
+
 		progressWidth := 0
 		for _, c := range cols[1:] {
-			progressWidth += c.width
+			if !c.hidden {
+				progressWidth += c.width
+			}
 		}
 
-		// Build status components
 		phase := busy.phaseMessage()
 		elapsed := busy.elapsed()
-
-		// Calculate bar width: total area minus spinner, phase text, elapsed, spacing
 		barAvail := progressWidth - lipgloss.Width(phase) - lipgloss.Width(elapsed) - 6
-		if barAvail < 8 {
-			barAvail = 8
+		if barAvail < 4 {
+			barAvail = 4
 		}
 		bar := renderProgressBar(busy.progressFraction(), barAvail)
 
@@ -421,7 +559,7 @@ func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool, isAl
 			bar + " " +
 			lipgloss.NewStyle().Foreground(subtle).Italic(true).Render(elapsed)
 
-		return prefix + nameCell + busyContent
+		return prefix + nameCell + div + busyContent
 	}
 
 	// ── Normal row ──
@@ -430,89 +568,88 @@ func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool, isAl
 		vm.info.State,
 		vm.info.Snapshots,
 		vm.info.IPv4,
-		vm.info.Release,
-		"", // CPU — rendered as spark bar
-		"", // Disk — rendered as spark bar
-		"", // Memory — rendered as spark bar
-		vm.info.Mounts,
+		"", // CPU
+		"", // Disk
+		"", // Memory
 	}
 
 	var cells []string
+	first := true
 	for i, val := range values {
 		if i >= len(cols) {
 			break
 		}
-
-		// Pick base style: selected > alt-row > normal
-		style := tableCellStyle.Width(cols[i].width)
-		if selected {
-			style = tableSelectedStyle.Width(cols[i].width)
-		} else if isAlt {
-			style = tableCellAltStyle.Width(cols[i].width)
+		if cols[i].hidden {
+			continue
 		}
 
-		// State column: add colored dot icon
+		style := cellStyle(cols[i].width)
+
+		// Column divider
+		cellDiv := ""
+		if !first {
+			cellDiv = div
+		}
+		first = false
+
+		// State column
 		if i == 1 {
 			icon := stateIcon(val)
 			if !selected {
 				style = style.Foreground(stateColor(val))
 			}
-			stateText := icon + " " + val
-			cells = append(cells, style.Render(stateText))
+			cells = append(cells, cellDiv+style.Render(icon+" "+val))
 			continue
 		}
 
-		// CPU column (index 5): spark bar from load average
-		if i == 5 {
-			barW := cols[i].width - 6 // leave room for "XXX%" text
+		// CPU column (index 4)
+		if i == 4 {
+			barW := cols[i].width - 6
 			if barW < 3 {
 				barW = 3
 			}
 			if frac, ok := parseCPULoadFraction(vm.info.Load, vm.info.CPUs); ok {
-				sparkBar := renderSparkBar(frac, barW, usageBarColor(frac))
-				cells = append(cells, style.Render(sparkBar))
+				cells = append(cells, cellDiv+style.Render(renderSparkBar(frac, barW, usageBarColor(frac))))
 			} else {
-				cells = append(cells, style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.CPUs)))
+				cells = append(cells, cellDiv+style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.CPUs)))
 			}
 			continue
 		}
 
-		// Disk column (index 6): spark bar
-		if i == 6 {
+		// Disk column (index 5)
+		if i == 5 {
 			barW := cols[i].width - 6
 			if barW < 3 {
 				barW = 3
 			}
 			if frac, ok := parseUsageFraction(vm.info.DiskUsage); ok {
-				sparkBar := renderSparkBar(frac, barW, usageBarColor(frac))
-				cells = append(cells, style.Render(sparkBar))
+				cells = append(cells, cellDiv+style.Render(renderSparkBar(frac, barW, usageBarColor(frac))))
 			} else {
-				cells = append(cells, style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.DiskUsage)))
+				cells = append(cells, cellDiv+style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.DiskUsage)))
 			}
 			continue
 		}
 
-		// Memory column (index 7): spark bar
-		if i == 7 {
+		// Memory column (index 6)
+		if i == 6 {
 			barW := cols[i].width - 6
 			if barW < 3 {
 				barW = 3
 			}
 			if frac, ok := parseUsageFraction(vm.info.MemoryUsage); ok {
-				sparkBar := renderSparkBar(frac, barW, usageBarColor(frac))
-				cells = append(cells, style.Render(sparkBar))
+				cells = append(cells, cellDiv+style.Render(renderSparkBar(frac, barW, usageBarColor(frac))))
 			} else {
-				cells = append(cells, style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.MemoryUsage)))
+				cells = append(cells, cellDiv+style.Render(lipgloss.NewStyle().Foreground(subtle).Render(vm.info.MemoryUsage)))
 			}
 			continue
 		}
 
-		// Truncate long values (safe for plain text only)
+		// Default: truncate and render
 		visibleLen := lipgloss.Width(val)
 		if visibleLen > cols[i].width-2 && cols[i].width > 4 {
 			val = val[:cols[i].width-4] + "…"
 		}
-		cells = append(cells, style.Render(val))
+		cells = append(cells, cellDiv+style.Render(val))
 	}
 
 	return prefix + strings.Join(cells, "")
@@ -682,31 +819,51 @@ func (m tableModel) renderFooter() string {
 		{"f", "Filter"}, {"/", "Refresh"}, {"h", "Help"}, {"v", "Ver"}, {"q", "Quit"},
 	}
 
-	line1 := renderShortcutLine(vmOps) +
-		footerSepStyle.Render("  │  ") +
-		renderShortcutLine(bulkOps)
-	line2 := renderShortcutLine(navOps) +
-		footerSepStyle.Render("  │  ") +
-		renderShortcutLine(appOps)
+	divider := footerSepStyle.Render("  │  ")
 
-	// Status line: sort info + refresh info
-	sortInfo := fmt.Sprintf("Tab: sort by %s  Shift+Tab: %s",
-		m.columns[m.sortColumn].title,
-		func() string {
-			if m.sortAscending {
-				return "▲ asc"
-			}
-			return "▼ desc"
-		}())
-
-	var refreshInfo string
-	if !m.lastRefresh.IsZero() {
-		ago := time.Since(m.lastRefresh).Truncate(time.Second)
-		refreshInfo = fmt.Sprintf("  ·  ↻ updated %s ago", ago)
+	// Responsive footer: adjust based on terminal width
+	var footerLines string
+	if m.width >= 100 {
+		// Two lines with groups
+		line1 := renderShortcutLine(vmOps) + divider + renderShortcutLine(bulkOps)
+		line2 := renderShortcutLine(navOps) + divider + renderShortcutLine(appOps)
+		footerLines = line1 + "\n" + line2
+	} else if m.width >= 60 {
+		// Compact: all on separate lines
+		line1 := renderShortcutLine(vmOps)
+		line2 := renderShortcutLine(bulkOps) + divider + renderShortcutLine(navOps)
+		line3 := renderShortcutLine(appOps)
+		footerLines = line1 + "\n" + line2 + "\n" + line3
+	} else {
+		// Very narrow: minimal shortcuts
+		essentials := []struct{ key, desc string }{
+			{"c", "Create"}, {"[", "Stop"}, {"]", "Start"},
+			{"i", "Info"}, {"s", "Shell"}, {"q", "Quit"},
+		}
+		footerLines = renderShortcutLine(essentials)
 	}
-	statusLine := formHintStyle.Render("  " + sortInfo + refreshInfo)
 
-	return sep + "\n" + footerStyle.Render(line1 + "\n" + line2 + "\n" + statusLine)
+	// Status line: sort info + refresh info (truncated to fit)
+	sortDir := "▲ asc"
+	if !m.sortAscending {
+		sortDir = "▼ desc"
+	}
+
+	var statusContent string
+	if m.width >= 60 {
+		statusContent = fmt.Sprintf("  Tab: sort by %s  Shift+Tab: %s",
+			m.columns[m.sortColumn].title, sortDir)
+		if !m.lastRefresh.IsZero() {
+			ago := time.Since(m.lastRefresh).Truncate(time.Second)
+			statusContent += fmt.Sprintf("  ·  ↻ %s ago", ago)
+		}
+	} else {
+		statusContent = fmt.Sprintf("  Sort: %s %s",
+			m.columns[m.sortColumn].title, sortDir)
+	}
+	statusLine := formHintStyle.Render(statusContent)
+
+	return sep + "\n" + footerStyle.Render(footerLines + "\n" + statusLine)
 }
 
 func renderShortcutLine(shortcuts []struct{ key, desc string }) string {
