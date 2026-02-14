@@ -4,7 +4,9 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -33,6 +35,13 @@ type tableModel struct {
 	sortAscending bool
 
 	columns []tableColumn
+
+	// Inline operation tracking
+	busyVMs map[string]string // vmName -> operation label ("Stopping…", etc.)
+	spinner spinner.Model
+
+	// Auto-refresh
+	lastRefresh time.Time
 }
 
 func newTableModel() tableModel {
@@ -42,10 +51,16 @@ func newTableModel() tableModel {
 	ti.PromptStyle = filterActiveStyle
 	ti.CharLimit = 64
 
+	s := spinner.New()
+	s.Spinner = spinner.MiniDot
+	s.Style = spinnerStyle
+
 	return tableModel{
 		filterInput:   ti,
 		sortColumn:    0,
 		sortAscending: true,
+		busyVMs:       make(map[string]string),
+		spinner:       s,
 		columns: []tableColumn{
 			{title: "Name", width: 18},
 			{title: "State", width: 12},
@@ -128,6 +143,10 @@ func (m *tableModel) toggleSortDirection() {
 
 func (m tableModel) Update(msg tea.Msg) (tableModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
 		if m.filterFocused {
 			switch msg.String() {
@@ -304,6 +323,8 @@ func (m tableModel) computeColumnWidths() []tableColumn {
 }
 
 func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool) string {
+	busyLabel, isBusy := m.busyVMs[vm.info.Name]
+
 	values := []string{
 		vm.info.Name,
 		vm.info.State,
@@ -325,12 +346,21 @@ func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool) stri
 		if selected {
 			style = tableSelectedStyle.Width(cols[i].width)
 		}
-		// Color the State column
-		if i == 1 && !selected {
+
+		// State column: show spinner + label for busy VMs
+		if i == 1 && isBusy {
+			// Render spinner cell directly — bypass truncation since spinner
+			// contains ANSI codes that would be corrupted by byte-slicing.
+			spinnerCell := m.spinner.View() + " " + busyLabel
+			cells = append(cells, style.Foreground(accent).Render(spinnerCell))
+			continue
+		} else if i == 1 && !selected {
 			style = style.Foreground(stateColor(val))
 		}
-		// Truncate long values
-		if len(val) > cols[i].width-2 && cols[i].width > 4 {
+
+		// Truncate long values (safe for plain text only)
+		visibleLen := lipgloss.Width(val)
+		if visibleLen > cols[i].width-2 && cols[i].width > 4 {
 			val = val[:cols[i].width-4] + "…"
 		}
 		cells = append(cells, style.Render(val))
@@ -358,9 +388,17 @@ func (m tableModel) renderFooter() string {
 	line1 := renderShortcutLine(shortcuts)
 	line2 := renderShortcutLine(shortcuts2)
 
-	sortHint := formHintStyle.Render(fmt.Sprintf("  Tab: cycle sort  Shift+Tab: toggle direction  (sorting by %s)", m.columns[m.sortColumn].title))
+	sortHint := fmt.Sprintf("  Tab: cycle sort  Shift+Tab: toggle direction  (sorting by %s)", m.columns[m.sortColumn].title)
 
-	return footerStyle.Render(line1 + "\n" + line2 + "\n" + sortHint)
+	// Show last-refreshed and auto-refresh indicator
+	var refreshInfo string
+	if !m.lastRefresh.IsZero() {
+		ago := time.Since(m.lastRefresh).Truncate(time.Second)
+		refreshInfo = fmt.Sprintf("  ↻ auto-refresh %s  ·  updated %s ago", autoRefreshInterval, ago)
+	}
+	statusLine := formHintStyle.Render(sortHint + refreshInfo)
+
+	return footerStyle.Render(line1 + "\n" + line2 + "\n" + statusLine)
 }
 
 func renderShortcutLine(shortcuts []struct{ key, desc string }) string {
