@@ -304,10 +304,14 @@ func (m mountAddModel) updateBrowser(msg tea.KeyMsg) (mountAddModel, tea.Cmd) {
 			}
 		}
 	case "enter":
-		// Select current directory as source
+		// Select the highlighted directory as source
+		selectedDir := m.currentDir
+		if len(m.entries) > 0 && m.dirCursor < len(m.entries) {
+			selectedDir = filepath.Join(m.currentDir, m.entries[m.dirCursor].Name())
+		}
 		m.phase = 1
-		m.sourceInput.SetValue(m.currentDir)
-		baseName := filepath.Base(m.currentDir)
+		m.sourceInput.SetValue(selectedDir)
+		baseName := filepath.Base(selectedDir)
 		m.targetInput.SetValue("/home/ubuntu/" + baseName)
 		m.targetInput.Focus()
 		m.formCursor = 1

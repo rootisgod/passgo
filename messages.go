@@ -3,6 +3,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -11,8 +12,9 @@ import (
 
 // vmListResultMsg carries the result of fetching the VM list.
 type vmListResultMsg struct {
-	vms []vmData
-	err error
+	vms        []vmData
+	err        error
+	background bool // true when triggered by auto-refresh (don't switch views)
 }
 
 // vmOperationResultMsg carries the result of a single VM operation.
@@ -20,6 +22,7 @@ type vmOperationResultMsg struct {
 	vmName    string
 	operation string
 	err       error
+	inline    bool // true when the operation was inline (stay on table)
 }
 
 // vmInfoResultMsg carries raw info output for a single VM.
@@ -52,39 +55,67 @@ type confirmResultMsg struct{ confirmed bool }
 // backToTableMsg tells the root model to return to the main table view.
 type backToTableMsg struct{}
 
+// autoRefreshTickMsg fires periodically to trigger a background VM list refresh.
+type autoRefreshTickMsg time.Time
+
+// ─── Auto-Refresh ──────────────────────────────────────────────────────────────
+
+const autoRefreshInterval = 1 * time.Second
+
+// autoRefreshTickCmd returns a tea.Cmd that fires after the refresh interval.
+func autoRefreshTickCmd() tea.Cmd {
+	return tea.Tick(autoRefreshInterval, func(t time.Time) tea.Msg {
+		return autoRefreshTickMsg(t)
+	})
+}
+
 // ─── Command Factories ─────────────────────────────────────────────────────────
+
+// doFetchVMList is the shared logic for fetching VMs.
+func doFetchVMList() ([]vmData, error) {
+	listOutput, err := ListVMs()
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(listOutput, "\n")
+	var vmNames []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 4 {
+			vmNames = append(vmNames, fields[0])
+		}
+	}
+
+	var vms []vmData
+	for _, name := range vmNames {
+		info, err := GetVMInfo(name)
+		if err != nil {
+			vms = append(vms, vmData{info: VMInfo{Name: name, State: "Error"}, err: err})
+		} else {
+			vms = append(vms, vmData{info: parseVMInfo(info), err: nil})
+		}
+	}
+	return vms, nil
+}
 
 // fetchVMListCmd fetches the full VM list with details.
 func fetchVMListCmd() tea.Cmd {
 	return func() tea.Msg {
-		listOutput, err := ListVMs()
-		if err != nil {
-			return vmListResultMsg{err: err}
-		}
+		vms, err := doFetchVMList()
+		return vmListResultMsg{vms: vms, err: err}
+	}
+}
 
-		lines := strings.Split(listOutput, "\n")
-		var vmNames []string
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.Contains(line, "Name") || strings.Contains(line, "---") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) >= 4 {
-				vmNames = append(vmNames, fields[0])
-			}
-		}
-
-		var vms []vmData
-		for _, name := range vmNames {
-			info, err := GetVMInfo(name)
-			if err != nil {
-				vms = append(vms, vmData{info: VMInfo{Name: name, State: "Error"}, err: err})
-			} else {
-				vms = append(vms, vmData{info: parseVMInfo(info), err: nil})
-			}
-		}
-		return vmListResultMsg{vms: vms}
+// fetchVMListBackgroundCmd fetches VMs silently (for auto-refresh, stays on table).
+func fetchVMListBackgroundCmd() tea.Cmd {
+	return func() tea.Msg {
+		vms, err := doFetchVMList()
+		return vmListResultMsg{vms: vms, err: err, background: true}
 	}
 }
 
@@ -96,27 +127,27 @@ func fetchVMInfoCmd(vmName string) tea.Cmd {
 	}
 }
 
-// stopVMCmd stops a VM.
+// stopVMCmd stops a VM (inline — stays on table).
 func stopVMCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := StopVM(name)
-		return vmOperationResultMsg{vmName: name, operation: "stop", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "stop", err: err, inline: true}
 	}
 }
 
-// startVMCmd starts a VM.
+// startVMCmd starts a VM (inline — stays on table).
 func startVMCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := StartVM(name)
-		return vmOperationResultMsg{vmName: name, operation: "start", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "start", err: err, inline: true}
 	}
 }
 
-// suspendVMCmd suspends a VM.
+// suspendVMCmd suspends a VM (inline — stays on table).
 func suspendVMCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := runMultipassCommand("suspend", name)
-		return vmOperationResultMsg{vmName: name, operation: "suspend", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "suspend", err: err, inline: true}
 	}
 }
 
@@ -128,11 +159,11 @@ func deleteVMCmd(name string) tea.Cmd {
 	}
 }
 
-// recoverVMCmd recovers a deleted VM.
+// recoverVMCmd recovers a deleted VM (inline — stays on table).
 func recoverVMCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := RecoverVM(name)
-		return vmOperationResultMsg{vmName: name, operation: "recover", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "recover", err: err, inline: true}
 	}
 }
 

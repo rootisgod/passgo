@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -113,7 +114,9 @@ func initialModel() rootModel {
 func (m rootModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.loading.Init(),
+		m.table.spinner.Tick,
 		fetchVMListCmd(),
+		autoRefreshTickCmd(),
 	)
 }
 
@@ -133,15 +136,31 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	// ── Auto-refresh tick ──
+	case autoRefreshTickMsg:
+		// Only auto-refresh when we're on the table view
+		cmds := []tea.Cmd{autoRefreshTickCmd()} // always reschedule
+		if m.currentView == viewTable {
+			cmds = append(cmds, fetchVMListBackgroundCmd())
+		}
+		return m, tea.Batch(cmds...)
+
 	// ── Async results ──
 	case vmListResultMsg:
 		if msg.err != nil {
+			if msg.background {
+				// Silently ignore background fetch errors
+				return m, nil
+			}
 			m.errModal = newErrorModel("VM List Error", msg.err.Error())
 			m.setChildSizes()
 			m.currentView = viewError
 		} else {
 			m.table.setVMs(msg.vms)
-			m.currentView = viewTable
+			m.table.lastRefresh = time.Now()
+			if !msg.background {
+				m.currentView = viewTable
+			}
 		}
 		return m, nil
 
@@ -156,12 +175,21 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case vmOperationResultMsg:
+		// Clear busy state for the VM
+		delete(m.table.busyVMs, msg.vmName)
+
 		if msg.err != nil {
 			m.errModal = newErrorModel("Operation Error", msg.err.Error())
 			m.setChildSizes()
 			m.currentView = viewError
 			return m, nil
 		}
+
+		// Inline operations: stay on table, refresh in background
+		if msg.inline {
+			return m, fetchVMListBackgroundCmd()
+		}
+
 		// Return to mount/snap manager if that's where we came from
 		if m.lastMountVM != "" && (msg.operation == "mount" || msg.operation == "umount") {
 			vmName := m.lastMountVM
@@ -264,6 +292,11 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Delegate to active view for non-key messages ──
 	switch m.currentView {
+	case viewTable:
+		// Forward spinner ticks to the table for inline busy indicators
+		var cmd tea.Cmd
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	case viewLoading:
 		var cmd tea.Cmd
 		m.loading, cmd = m.loading.Update(msg)
@@ -345,24 +378,18 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.advCreate.Init()
 		case "[":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.loading = newLoadingModel("Stopping " + vm.Name + "…")
-				m.setChildSizes()
-				m.currentView = viewLoading
-				return m, tea.Batch(m.loading.Init(), stopVMCmd(vm.Name))
+				m.table.busyVMs[vm.Name] = "Stopping…"
+				return m, stopVMCmd(vm.Name)
 			}
 		case "]":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.loading = newLoadingModel("Starting " + vm.Name + "…")
-				m.setChildSizes()
-				m.currentView = viewLoading
-				return m, tea.Batch(m.loading.Init(), startVMCmd(vm.Name))
+				m.table.busyVMs[vm.Name] = "Starting…"
+				return m, startVMCmd(vm.Name)
 			}
 		case "p":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.loading = newLoadingModel("Suspending " + vm.Name + "…")
-				m.setChildSizes()
-				m.currentView = viewLoading
-				return m, tea.Batch(m.loading.Init(), suspendVMCmd(vm.Name))
+				m.table.busyVMs[vm.Name] = "Suspending…"
+				return m, suspendVMCmd(vm.Name)
 			}
 		case "<":
 			names := m.table.allVMNames()
@@ -392,10 +419,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "r":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.loading = newLoadingModel("Recovering " + vm.Name + "…")
-				m.setChildSizes()
-				m.currentView = viewLoading
-				return m, tea.Batch(m.loading.Init(), recoverVMCmd(vm.Name))
+				m.table.busyVMs[vm.Name] = "Recovering…"
+				return m, recoverVMCmd(vm.Name)
 			}
 		case "!":
 			m.confirm = newConfirmModel("PURGE ALL deleted VMs? This cannot be undone.")
