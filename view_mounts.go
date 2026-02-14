@@ -141,7 +141,7 @@ func (m mountManageModel) View() string {
 
 		style := tableCellStyle
 		if selected {
-			style = tableSelectedStyle
+			style = tableSelectedCellStyle
 		}
 
 		row := style.Width(srcW).Render(src) +
@@ -150,7 +150,7 @@ func (m mountManageModel) View() string {
 
 		prefix := "  "
 		if selected {
-			prefix = tableCursorStyle.Render("▸ ")
+			prefix = tableCursorStyle.Render("▎ ")
 		}
 		rows = append(rows, prefix+row)
 	}
