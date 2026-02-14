@@ -1,4 +1,4 @@
-// vm_operations.go - VM lifecycle operations (create, start, stop, delete, etc.)
+Ç// vm_operations.go - VM lifecycle operations (create, start, stop, delete, etc.)
 package main
 
 import (
