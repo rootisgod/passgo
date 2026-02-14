@@ -378,17 +378,17 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.advCreate.Init()
 		case "[":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.table.busyVMs[vm.Name] = "Stopping…"
+				m.table.busyVMs[vm.Name] = busyInfo{operation: "Stopping", startTime: time.Now()}
 				return m, stopVMCmd(vm.Name)
 			}
 		case "]":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.table.busyVMs[vm.Name] = "Starting…"
+				m.table.busyVMs[vm.Name] = busyInfo{operation: "Starting", startTime: time.Now()}
 				return m, startVMCmd(vm.Name)
 			}
 		case "p":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.table.busyVMs[vm.Name] = "Suspending…"
+				m.table.busyVMs[vm.Name] = busyInfo{operation: "Suspending", startTime: time.Now()}
 				return m, suspendVMCmd(vm.Name)
 			}
 		case "<":
@@ -419,7 +419,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "r":
 			if vm, ok := m.table.selectedVM(); ok {
-				m.table.busyVMs[vm.Name] = "Recovering…"
+				m.table.busyVMs[vm.Name] = busyInfo{operation: "Recovering", startTime: time.Now()}
 				return m, recoverVMCmd(vm.Name)
 			}
 		case "!":

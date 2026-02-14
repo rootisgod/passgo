@@ -6,22 +6,35 @@ import "github.com/charmbracelet/lipgloss"
 // ─── Color Palette ─────────────────────────────────────────────────────────────
 
 var (
-	accent     = lipgloss.Color("#7C3AED") // violet
-	subtle     = lipgloss.Color("#6C6C6C") // gray
-	highlight  = lipgloss.Color("#E8E8E8") // bright white
-	surface    = lipgloss.Color("#2A2A2A") // dark surface
-	runningClr = lipgloss.Color("#10B981") // green
-	stoppedClr = lipgloss.Color("#EF4444") // red
-	suspendClr = lipgloss.Color("#F59E0B") // amber
-	deletedClr = lipgloss.Color("#6B7280") // muted gray
+	accent      = lipgloss.Color("#7C3AED") // violet
+	accentLight = lipgloss.Color("#A78BFA") // lighter violet
+	subtle      = lipgloss.Color("#6C6C6C") // gray
+	dimmed      = lipgloss.Color("#4A4A4A") // darker gray
+	highlight   = lipgloss.Color("#E8E8E8") // bright white
+	surface     = lipgloss.Color("#2A2A2A") // dark surface
+	surfaceAlt  = lipgloss.Color("#1E1E1E") // zebra stripe
+	runningClr  = lipgloss.Color("#10B981") // green
+	stoppedClr  = lipgloss.Color("#EF4444") // red
+	suspendClr  = lipgloss.Color("#F59E0B") // amber
+	deletedClr  = lipgloss.Color("#6B7280") // muted gray
 )
 
 // ─── Title / App ───────────────────────────────────────────────────────────────
 
-var titleStyle = lipgloss.NewStyle().
+var titleBarStyle = lipgloss.NewStyle().
 	Bold(true).
-	Foreground(accent).
-	PaddingLeft(1)
+	Foreground(lipgloss.Color("#FFFFFF")).
+	Background(accent).
+	Padding(0, 1)
+
+var titleVMCountStyle = lipgloss.NewStyle().
+	Foreground(accentLight).
+	Background(accent)
+
+var titleLiveStyle = lipgloss.NewStyle().
+	Foreground(runningClr).
+	Background(accent).
+	Bold(true)
 
 // ─── Table ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +46,10 @@ var (
 
 	tableCellStyle = lipgloss.NewStyle().
 			PaddingRight(2)
+
+	tableCellAltStyle = lipgloss.NewStyle().
+				PaddingRight(2).
+				Background(surfaceAlt)
 
 	tableSelectedStyle = lipgloss.NewStyle().
 				Background(surface).
@@ -61,8 +78,10 @@ var (
 			Foreground(subtle)
 
 	footerStyle = lipgloss.NewStyle().
-			PaddingLeft(1).
-			PaddingTop(1)
+			PaddingLeft(1)
+
+	footerSepStyle = lipgloss.NewStyle().
+			Foreground(dimmed)
 )
 
 // ─── Filter ────────────────────────────────────────────────────────────────────
@@ -74,6 +93,10 @@ var (
 
 	filterInactiveStyle = lipgloss.NewStyle().
 				Foreground(subtle)
+
+	filterIconStyle = lipgloss.NewStyle().
+			Foreground(accent).
+			Bold(true)
 )
 
 // ─── Modal / Overlay ───────────────────────────────────────────────────────────
@@ -204,4 +227,17 @@ func stateColor(state string) lipgloss.Color {
 	default:
 		return subtle
 	}
+}
+
+// stateIcon returns a colored dot indicator for VM state.
+func stateIcon(state string) string {
+	clr := stateColor(state)
+	dot := "●"
+	switch state {
+	case "Deleted":
+		dot = "○"
+	case "Suspended":
+		dot = "◉"
+	}
+	return lipgloss.NewStyle().Foreground(clr).Render(dot)
 }
