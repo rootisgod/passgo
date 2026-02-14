@@ -11,6 +11,7 @@ type VMInfo struct {
 	IPv4        string
 	Release     string
 	CPUs        string
+	Load        string
 	DiskUsage   string
 	MemoryUsage string
 	Mounts      string
@@ -52,6 +53,8 @@ func parseVMInfo(info string) VMInfo {
 					vm.Release = value
 				case "CPU(s)":
 					vm.CPUs = value
+				case "Load":
+					vm.Load = value
 				case "Disk usage":
 					vm.DiskUsage = value
 				case "Memory usage":
