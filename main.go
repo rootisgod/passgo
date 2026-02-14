@@ -136,6 +136,15 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	// ── Info refresh tick ──
+	case infoRefreshTickMsg:
+		if m.currentView == viewInfo {
+			var cmd tea.Cmd
+			m.info, cmd = m.info.Update(msg)
+			return m, cmd
+		}
+		return m, nil // discard tick if no longer on info view
+
 	// ── Auto-refresh tick ──
 	case autoRefreshTickMsg:
 		// Only auto-refresh when we're on the table view
@@ -165,6 +174,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case vmInfoResultMsg:
+		if m.currentView == viewInfo {
+			// Delegate to info model for live chart updates
+			var cmd tea.Cmd
+			m.info, cmd = m.info.Update(msg)
+			return m, cmd
+		}
 		if msg.err != nil {
 			m.errModal = newErrorModel("Info Error", msg.err.Error())
 			m.setChildSizes()
@@ -365,7 +380,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if vm, ok := m.table.selectedVM(); ok {
 				m.info = newInfoModel(vm.Name, m.width, m.height)
 				m.currentView = viewInfo
-				return m, fetchVMInfoCmd(vm.Name)
+				return m, tea.Batch(fetchVMInfoCmd(vm.Name), infoRefreshTickCmd())
 			}
 		case "c":
 			m.loading = newLoadingModel("Creating VM…")
