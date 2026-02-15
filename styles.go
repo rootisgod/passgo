@@ -311,6 +311,8 @@ func stateColor(state string) lipgloss.Color {
 		return suspendClr
 	case "Deleted":
 		return deletedClr
+	case "Creating":
+		return accent
 	default:
 		return subtle
 	}
@@ -325,6 +327,8 @@ func stateIcon(state string) string {
 		dot = "○"
 	case "Suspended":
 		dot = "◉"
+	case "Creating":
+		dot = "◌"
 	}
 	return lipgloss.NewStyle().Foreground(clr).Render(dot)
 }

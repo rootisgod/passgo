@@ -203,19 +203,33 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case vmOperationResultMsg:
-		// Clear busy state for the VM
+		// Capture timing before clearing busy state
+		var elapsed time.Duration
+		if busy, ok := m.table.busyVMs[msg.vmName]; ok {
+			elapsed = time.Since(busy.startTime)
+		}
 		delete(m.table.busyVMs, msg.vmName)
 
 		if msg.err != nil {
+			// Toast the error too
+			toastCmd := m.table.addToast(
+				fmt.Sprintf("✗ %s failed: %s", msg.operation, msg.err.Error()), "error")
+			if msg.inline {
+				return m, tea.Batch(toastCmd, fetchVMListBackgroundCmd())
+			}
 			m.errModal = newErrorModel("Operation Error", msg.err.Error())
 			m.setChildSizes()
 			m.currentView = viewError
-			return m, nil
+			return m, toastCmd
 		}
+
+		// Build toast message
+		toastMsg := operationToastMessage(msg.vmName, msg.operation, elapsed)
+		toastCmd := m.table.addToast(toastMsg, "success")
 
 		// Inline operations: stay on table, refresh in background
 		if msg.inline {
-			return m, fetchVMListBackgroundCmd()
+			return m, tea.Batch(toastCmd, fetchVMListBackgroundCmd())
 		}
 
 		// Return to mount/snap manager if that's where we came from
@@ -224,19 +238,19 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = newLoadingModel("Refreshing mounts…")
 			m.setChildSizes()
 			m.currentView = viewLoading
-			return m, tea.Batch(m.loading.Init(), fetchMountsCmd(vmName))
+			return m, tea.Batch(m.loading.Init(), fetchMountsCmd(vmName), toastCmd)
 		}
 		if m.lastSnapVM != "" && (msg.operation == "snapshot" || msg.operation == "delete-snapshot" || msg.operation == "restore") {
 			vmName := m.lastSnapVM
 			m.loading = newLoadingModel("Refreshing snapshots…")
 			m.setChildSizes()
 			m.currentView = viewLoading
-			return m, tea.Batch(m.loading.Init(), fetchSnapshotsCmd(vmName))
+			return m, tea.Batch(m.loading.Init(), fetchSnapshotsCmd(vmName), toastCmd)
 		}
 		m.loading = newLoadingModel("Refreshing…")
 		m.setChildSizes()
 		m.currentView = viewLoading
-		return m, tea.Batch(m.loading.Init(), fetchVMListCmd())
+		return m, tea.Batch(m.loading.Init(), fetchVMListCmd(), toastCmd)
 
 	case snapshotListResultMsg:
 		if msg.err != nil {
@@ -288,13 +302,23 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case advCreateMsg:
-		m.loading = newLoadingModel(fmt.Sprintf("Creating %s…", msg.name))
-		m.setChildSizes()
-		m.currentView = viewLoading
-		return m, tea.Batch(
-			m.loading.Init(),
-			advancedCreateCmd(msg.name, msg.release, msg.cpus, msg.memoryMB, msg.diskGB, msg.cloudInitFile),
-		)
+		// Return to table with placeholder row and busy animation
+		placeholder := vmData{info: VMInfo{Name: msg.name, State: "Creating"}}
+		m.table.vms = append(m.table.vms, placeholder)
+		m.table.applyFilterAndSort()
+		for i, vm := range m.table.filteredVMs {
+			if vm.info.Name == msg.name {
+				m.table.cursor = i
+				visible := m.table.visibleRows()
+				if m.table.cursor >= m.table.offset+visible {
+					m.table.offset = m.table.cursor - visible + 1
+				}
+				break
+			}
+		}
+		m.table.busyVMs[msg.name] = busyInfo{operation: "Creating", startTime: time.Now()}
+		m.currentView = viewTable
+		return m, advancedCreateCmd(msg.name, msg.release, msg.cpus, msg.memoryMB, msg.diskGB, msg.cloudInitFile)
 
 	case mountAddRequestMsg:
 		m.mountAdd = newMountAddModel(msg.vmName, m.width, m.height)
@@ -316,6 +340,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, err := runMultipassCommand("mount", msg.newSource, msg.vmName+":"+msg.newTarget)
 			return vmOperationResultMsg{vmName: msg.vmName, operation: "mount", err: err}
 		})
+	}
+
+	// ── Toast expiry (always route to table regardless of view) ──
+	if expire, ok := msg.(toastExpireMsg); ok {
+		m.table, _ = m.table.Update(expire)
+		return m, nil
 	}
 
 	// ── Delegate to active view for non-key messages ──
@@ -396,10 +426,24 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(fetchVMInfoCmd(vm.Name), infoRefreshTickCmd())
 			}
 		case "c":
-			m.loading = newLoadingModel("Creating VM…")
-			m.setChildSizes()
-			m.currentView = viewLoading
-			return m, tea.Batch(m.loading.Init(), quickCreateCmd())
+			name := VMNamePrefix + randomString(VMNameRandomLength)
+			// Add placeholder row and busy animation
+			placeholder := vmData{info: VMInfo{Name: name, State: "Creating"}}
+			m.table.vms = append(m.table.vms, placeholder)
+			m.table.applyFilterAndSort()
+			// Move cursor to the new row
+			for i, vm := range m.table.filteredVMs {
+				if vm.info.Name == name {
+					m.table.cursor = i
+					visible := m.table.visibleRows()
+					if m.table.cursor >= m.table.offset+visible {
+						m.table.offset = m.table.cursor - visible + 1
+					}
+					break
+				}
+			}
+			m.table.busyVMs[name] = busyInfo{operation: "Creating", startTime: time.Now()}
+			return m, quickCreateCmd(name)
 		case "C":
 			m.advCreate = newAdvCreateModel(m.width, m.height)
 			m.currentView = viewAdvCreate
@@ -612,6 +656,49 @@ func (m rootModel) View() string {
 		return m.mountModify.View()
 	default:
 		return "Unknown view"
+	}
+}
+
+// ─── Toast Helpers ──────────────────────────────────────────────────────────────
+
+func operationToastMessage(vmName, operation string, elapsed time.Duration) string {
+	secs := elapsed.Seconds()
+	timeStr := ""
+	if secs >= 0.5 {
+		timeStr = fmt.Sprintf(" in %.1fs", secs)
+	}
+
+	switch operation {
+	case "stop":
+		return fmt.Sprintf("✓ %s stopped%s", vmName, timeStr)
+	case "start":
+		return fmt.Sprintf("✓ %s started%s", vmName, timeStr)
+	case "suspend":
+		return fmt.Sprintf("✓ %s suspended%s", vmName, timeStr)
+	case "recover":
+		return fmt.Sprintf("✓ %s recovered%s", vmName, timeStr)
+	case "delete":
+		return fmt.Sprintf("✓ %s deleted%s", vmName, timeStr)
+	case "create":
+		return fmt.Sprintf("✓ %s created%s", vmName, timeStr)
+	case "snapshot":
+		return fmt.Sprintf("✓ Snapshot created for %s%s", vmName, timeStr)
+	case "restore":
+		return fmt.Sprintf("✓ Snapshot restored for %s%s", vmName, timeStr)
+	case "delete-snapshot":
+		return fmt.Sprintf("✓ Snapshot deleted from %s%s", vmName, timeStr)
+	case "mount":
+		return fmt.Sprintf("✓ Mount added to %s%s", vmName, timeStr)
+	case "umount":
+		return fmt.Sprintf("✓ Mount removed from %s%s", vmName, timeStr)
+	case "stop-all":
+		return fmt.Sprintf("✓ All VMs stopped%s", timeStr)
+	case "start-all":
+		return fmt.Sprintf("✓ All VMs started%s", timeStr)
+	case "purge":
+		return fmt.Sprintf("✓ All deleted VMs purged%s", timeStr)
+	default:
+		return fmt.Sprintf("✓ %s %s%s", vmName, operation, timeStr)
 	}
 }
 

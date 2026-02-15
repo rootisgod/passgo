@@ -171,11 +171,10 @@ func recoverVMCmd(name string) tea.Cmd {
 }
 
 // quickCreateCmd creates a VM with default settings.
-func quickCreateCmd() tea.Cmd {
+func quickCreateCmd(name string) tea.Cmd {
 	return func() tea.Msg {
-		name := VMNamePrefix + randomString(VMNameRandomLength)
 		_, err := LaunchVM(name, DefaultUbuntuRelease)
-		return vmOperationResultMsg{vmName: name, operation: "create", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "create", err: err, inline: true}
 	}
 }
 
@@ -188,7 +187,7 @@ func advancedCreateCmd(name, release string, cpus, memoryMB, diskGB int, cloudIn
 		} else {
 			_, err = LaunchVMWithCloudInit(name, release, cpus, memoryMB, diskGB, cloudInitFile)
 		}
-		return vmOperationResultMsg{vmName: name, operation: "create", err: err}
+		return vmOperationResultMsg{vmName: name, operation: "create", err: err, inline: true}
 	}
 }
 
