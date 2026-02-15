@@ -443,6 +443,13 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingCmd = purgeAllVMsCmd()
 			m.currentView = viewConfirm
 			return m, nil
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+			idx := int(msg.String()[0] - '1') // '1'→0, '2'→1, ...
+			if msg.String() == "0" {
+				idx = 9
+			}
+			setTheme(idx)
+			return m, nil
 		case "/":
 			m.loading = newLoadingModel("Refreshing…")
 			m.setChildSizes()
