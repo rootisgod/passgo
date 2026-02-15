@@ -287,31 +287,49 @@ func (m tableModel) View() string {
 		countText = fmt.Sprintf(" %d/%d VMs", vmCount, totalCount)
 	}
 	liveIndicator := " ● LIVE"
+	themeName := " ◈ " + currentTheme().Name + " "
 
 	w := m.width
 	if w < 1 {
 		w = 80
 	}
 
-	// Build title bar content that fits within terminal width
-	titleLabel := " ◆ Multipass"
 	bgStyle := lipgloss.NewStyle().Background(accent)
-	needed := lipgloss.Width(titleLabel) + lipgloss.Width(countText) + lipgloss.Width(liveIndicator)
+	themeStyle := lipgloss.NewStyle().Foreground(accentLight).Background(accent)
 
-	var titleText string
-	if needed <= w {
-		// Everything fits
-		titleText = titleBarStyle.Render(titleLabel) +
-			titleVMCountStyle.Render(countText) +
-			titleLiveStyle.Render(liveIndicator)
-	} else if lipgloss.Width(titleLabel)+lipgloss.Width(countText) <= w {
-		// Drop the LIVE indicator
-		titleText = titleBarStyle.Render(titleLabel) +
-			titleVMCountStyle.Render(countText)
-	} else {
-		// Just the title
-		titleText = titleBarStyle.Render(titleLabel)
+	// Build left side of title bar that fits within terminal width
+	titleLabel := " ◆ Multipass"
+	leftParts := titleBarStyle.Render(titleLabel)
+	leftWidth := lipgloss.Width(leftParts)
+
+	// Progressively add elements if they fit
+	liveWidth := lipgloss.Width(liveIndicator)
+	countWidth := lipgloss.Width(countText)
+	themeWidth := lipgloss.Width(themeName)
+
+	showCount := leftWidth+countWidth <= w
+	showLive := showCount && leftWidth+countWidth+liveWidth <= w
+	showTheme := leftWidth+countWidth+themeWidth <= w
+
+	if showCount {
+		leftParts += titleVMCountStyle.Render(countText)
+		leftWidth += countWidth
 	}
+	if showLive {
+		leftParts += titleLiveStyle.Render(liveIndicator)
+		leftWidth += liveWidth
+	}
+
+	// Right-align theme name
+	rightPart := ""
+	if showTheme {
+		gap := w - leftWidth - themeWidth
+		if gap > 0 {
+			rightPart = bgStyle.Render(strings.Repeat(" ", gap)) + themeStyle.Render(themeName)
+		}
+	}
+
+	titleText := leftParts + rightPart
 
 	// Pad to exactly terminal width (no overflow)
 	titleVisibleWidth := lipgloss.Width(titleText)
@@ -816,7 +834,7 @@ func (m tableModel) renderFooter() string {
 		{"i", "Info"}, {"s", "Shell"}, {"n", "Snap"}, {"m", "Snaps"}, {"M", "Mount"},
 	}
 	appOps := []struct{ key, desc string }{
-		{"f", "Filter"}, {"/", "Refresh"}, {"h", "Help"}, {"v", "Ver"}, {"q", "Quit"},
+		{"f", "Filter"}, {"/", "Refresh"}, {"1-0", "Theme"}, {"h", "Help"}, {"q", "Quit"},
 	}
 
 	divider := footerSepStyle.Render("  │  ")

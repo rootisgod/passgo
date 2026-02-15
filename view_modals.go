@@ -43,14 +43,34 @@ func (m helpModel) View() string {
 		{"m", "Manage snapshots"},
 		{"M", "Manage mounts"},
 		{"v", "Version"},
+		{"1-0", "Switch theme (1-9, 0)"},
 		{"q", "Quit"},
 	}
 
 	var lines []string
 	for _, s := range shortcuts {
 		lines = append(lines, fmt.Sprintf("  %s  %s",
-			footerKeyStyle.Width(3).Render(s.key),
+			footerKeyStyle.Width(4).Render(s.key),
 			modalTextStyle.Render(s.desc)))
+	}
+
+	// Theme list
+	themeLines := []string{"", formActiveLabelStyle.Render("  Themes:")}
+	for i, t := range themes {
+		key := fmt.Sprintf("%d", i+1)
+		if i == 9 {
+			key = "0"
+		}
+		marker := "  "
+		if i == currentThemeIndex {
+			marker = "● "
+		}
+		swatch := lipgloss.NewStyle().Foreground(t.Accent).Render("██")
+		themeLines = append(themeLines, fmt.Sprintf("  %s%s %s %s",
+			marker,
+			footerKeyStyle.Width(2).Render(key),
+			swatch,
+			modalTextStyle.Render(t.Name)))
 	}
 
 	hints := []string{
@@ -62,7 +82,7 @@ func (m helpModel) View() string {
 		formHintStyle.Render("Press Esc or Enter to close"),
 	}
 
-	content := title + "\n\n" + strings.Join(lines, "\n") + "\n" + strings.Join(hints, "\n")
+	content := title + "\n\n" + strings.Join(lines, "\n") + "\n" + strings.Join(themeLines, "\n") + "\n" + strings.Join(hints, "\n")
 	box := modalStyle.Render(content)
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
