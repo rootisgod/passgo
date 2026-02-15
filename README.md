@@ -2,6 +2,10 @@
 
 A terminal-based GUI for managing Multipass VMs with snapshot support.
 
+![Passgo TUI](images/passgo-tui.png "Passgo TUI")
+
+![Passgo Instance Info](images/passgo-instance-info.png "Passgo Instance Info")
+
 ## Features
 
 - **VM Management**: Start, stop, suspend, delete VMs
