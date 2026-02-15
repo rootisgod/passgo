@@ -122,6 +122,12 @@ func (m advCreateModel) Update(msg tea.Msg) (advCreateModel, tea.Cmd) {
 			f := &m.fields[m.cursor]
 			if f.isSelect && f.optionIdx > 0 {
 				f.optionIdx--
+			} else if f.isNumeric {
+				if v, err := strconv.Atoi(f.input.Value()); err == nil {
+					if vals := m.niceValues(m.cursor); vals != nil {
+						f.input.SetValue(fmt.Sprintf("%d", snapPrev(v, vals)))
+					}
+				}
 			}
 			return m, nil
 
@@ -129,6 +135,12 @@ func (m advCreateModel) Update(msg tea.Msg) (advCreateModel, tea.Cmd) {
 			f := &m.fields[m.cursor]
 			if f.isSelect && f.optionIdx < len(f.options)-1 {
 				f.optionIdx++
+			} else if f.isNumeric {
+				if v, err := strconv.Atoi(f.input.Value()); err == nil {
+					if vals := m.niceValues(m.cursor); vals != nil {
+						f.input.SetValue(fmt.Sprintf("%d", snapNext(v, vals)))
+					}
+				}
 			}
 			return m, nil
 
@@ -182,6 +194,47 @@ func (m *advCreateModel) focusCurrent() {
 	}
 }
 
+// Predefined "nice" values for numeric fields.
+var (
+	niceRAMValues  = []int{256, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 10240, 12288, 16384, 24576, 32768, 49152, 65536}
+	niceDiskValues = []int{4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512}
+	niceCPUValues  = []int{1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64}
+)
+
+// snapNext returns the next value in the list above currentVal, or the last value.
+func snapNext(currentVal int, values []int) int {
+	for _, v := range values {
+		if v > currentVal {
+			return v
+		}
+	}
+	return values[len(values)-1]
+}
+
+// snapPrev returns the previous value in the list below currentVal, or the first value.
+func snapPrev(currentVal int, values []int) int {
+	for i := len(values) - 1; i >= 0; i-- {
+		if values[i] < currentVal {
+			return values[i]
+		}
+	}
+	return values[0]
+}
+
+// niceValues returns the appropriate value list for a field.
+func (m advCreateModel) niceValues(fieldIdx int) []int {
+	switch m.fields[fieldIdx].label {
+	case "RAM (MB)":
+		return niceRAMValues
+	case "Disk (GB)":
+		return niceDiskValues
+	case "CPU Cores":
+		return niceCPUValues
+	default:
+		return nil
+	}
+}
+
 func (m advCreateModel) submit() tea.Cmd {
 	name := m.fields[0].input.Value()
 	if name == "" {
@@ -226,9 +279,42 @@ func (m advCreateModel) submit() tea.Cmd {
 }
 
 func (m advCreateModel) View() string {
-	title := formTitleStyle.Render("Create New Instance")
+	// Title bar styled like the main table
+	titleLabel := " ◆ Create New Instance"
+	w := min(m.width-4, 60)
+	if w < 30 {
+		w = 30
+	}
+	titleText := titleBarStyle.Render(titleLabel)
+	titleVisibleWidth := lipgloss.Width(titleText)
+	if w > titleVisibleWidth {
+		pad := strings.Repeat(" ", w-titleVisibleWidth)
+		titleText += lipgloss.NewStyle().Background(accent).Render(pad)
+	}
 
-	var lines []string
+	// Column widths
+	labelW := 16
+	valueW := w - labelW - 5 // 5 = prefix(3) + div(1) + padding(1)
+	if valueW < 16 {
+		valueW = 16
+	}
+
+	divStyle := lipgloss.NewStyle().Foreground(dimmed)
+	div := divStyle.Render("│")
+
+	// Header
+	headerLabel := tableHeaderStyle.Width(labelW).Render("Field")
+	headerValue := tableHeaderStyle.Width(valueW).Render("Value")
+	header := "  " + headerLabel + div + headerValue
+
+	// Separator
+	sep := "  " + divStyle.Render(strings.Repeat("─", labelW)) +
+		divStyle.Render("┼") +
+		divStyle.Render(strings.Repeat("─", valueW))
+
+	// Rows
+	var rows []string
+	var buttons []string
 	for i, f := range m.fields {
 		active := i == m.cursor
 
@@ -237,47 +323,70 @@ func (m advCreateModel) View() string {
 			if active {
 				style = formActiveButtonStyle
 			}
-			lines = append(lines, style.Render(f.label))
+			buttons = append(buttons, style.Render(f.label))
 			continue
 		}
 
-		label := formLabelStyle.Render(f.label + ":")
+		// Selection prefix
+		prefix := "  "
 		if active {
-			label = formActiveLabelStyle.Render(f.label + ":")
+			prefix = tableCursorStyle.Render("▎ ")
 		}
 
+		// Label
+		labelStyle := formLabelStyle.Width(labelW)
+		if active {
+			labelStyle = formActiveLabelStyle.Width(labelW)
+		}
+		label := labelStyle.Render(f.label)
+
+		// Value
 		var value string
 		if f.isSelect {
-			// Show current option with arrows
 			opt := f.options[f.optionIdx]
 			left := "  "
 			right := "  "
 			if f.optionIdx > 0 {
-				left = "◀ "
+				left = lipgloss.NewStyle().Foreground(accent).Render("◀ ")
 			}
 			if f.optionIdx < len(f.options)-1 {
-				right = " ▶"
+				right = lipgloss.NewStyle().Foreground(accent).Render(" ▶")
 			}
 			if active {
-				value = formActiveButtonStyle.Render(left + opt + right)
+				value = left + formValueStyle.Render(opt) + right
 			} else {
-				value = formValueStyle.Render("  " + opt + "  ")
+				value = "  " + lipgloss.NewStyle().Foreground(subtle).Render(opt) + "  "
+			}
+		} else if f.isNumeric {
+			if active {
+				left := lipgloss.NewStyle().Foreground(accent).Render("◀ ")
+				right := lipgloss.NewStyle().Foreground(accent).Render(" ▶")
+				value = left + f.input.View() + right
+			} else {
+				value = "  " + lipgloss.NewStyle().Foreground(subtle).Render(f.input.Value()) + "  "
 			}
 		} else {
 			if active {
 				value = f.input.View()
 			} else {
-				value = formValueStyle.Render(f.input.Value())
+				value = lipgloss.NewStyle().Foreground(subtle).Render(f.input.Value())
 			}
 		}
 
-		lines = append(lines, fmt.Sprintf("  %s  %s", lipgloss.NewStyle().Width(16).Render(label), value))
+		rows = append(rows, prefix+label+div+value)
 	}
 
-	hint := "\n" + formHintStyle.Render("Tab/↑↓: navigate  ←→: cycle options  Enter: submit  Esc: cancel")
+	// Build table inside a border box
+	tableContent := header + "\n" + sep + "\n" + strings.Join(rows, "\n")
+	tableBox := tableBorderStyle.Width(w + 2).Render(tableContent)
 
-	content := title + "\n\n" + strings.Join(lines, "\n") + "\n" + hint
-	box := modalStyle.Render(content)
+	// Buttons row
+	buttonRow := "  " + strings.Join(buttons, "  ")
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	// Hints
+	hint := formHintStyle.Render("  Tab/↑↓: navigate  ←→: adjust values  Enter: submit  Esc: cancel")
+
+	content := titleText + "\n" + tableBox + "\n" + buttonRow + "\n\n" + hint
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
