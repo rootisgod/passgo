@@ -209,25 +209,55 @@ func (m infoModel) renderCharts() string {
 			"  Resource charts available when VM is running")
 	}
 
-	chartWidth := min(m.width-12, 72)
-	barWidth := chartWidth - 22 // leave room for label + percentage
+	chartWidth := min(m.width-12, 80)
+	barWidth := chartWidth - 22 // leave room for label + percentage + detail
 	if barWidth < 10 {
 		barWidth = 10
 	}
 
+	// Build detail strings showing actual values
+	cpuDetail := formatCPUDetail(m.lastLoad, m.lastCPUs)
+	memDetail := formatUsageDetail(m.lastMemRaw)
+	diskDetail := formatUsageDetail(m.lastDiskRaw)
+
 	// CPU chart
-	cpuLine := renderChartLine("CPU", m.lastCPU, m.lastLoad, m.cpuHistory, barWidth)
+	cpuLine := renderChartLine("CPU", m.lastCPU, cpuDetail, m.cpuHistory, barWidth)
 	// Memory chart
-	memLine := renderChartLine("Mem", m.lastMem, m.lastMemRaw, m.memHistory, barWidth)
+	memLine := renderChartLine("Mem", m.lastMem, memDetail, m.memHistory, barWidth)
 	// Disk chart
-	diskLine := renderChartLine("Dsk", m.lastDisk, m.lastDiskRaw, m.diskHistory, barWidth)
+	diskLine := renderChartLine("Dsk", m.lastDisk, diskDetail, m.diskHistory, barWidth)
 
 	sep := lipgloss.NewStyle().Foreground(dimmed).Render(strings.Repeat("─", chartWidth))
 
 	return cpuLine + "\n" + memLine + "\n" + diskLine + "\n" + sep
 }
 
-func renderChartLine(label string, fraction float64, rawVal string, history []float64, barWidth int) string {
+// formatCPUDetail returns e.g. "0.12 load / 2 CPUs"
+func formatCPUDetail(load, cpus string) string {
+	if load == "" || load == "--" {
+		return cpus + " CPUs"
+	}
+	fields := strings.Fields(load)
+	loadVal := load
+	if len(fields) > 0 {
+		loadVal = fields[0]
+	}
+	return loadVal + " load / " + cpus + " CPUs"
+}
+
+// formatUsageDetail returns e.g. "1.2GiB / 3.8GiB"
+func formatUsageDetail(raw string) string {
+	if raw == "" || raw == "--" {
+		return "--"
+	}
+	parts := strings.SplitN(raw, " out of ", 2)
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[0]) + " / " + strings.TrimSpace(parts[1])
+	}
+	return raw
+}
+
+func renderChartLine(label string, fraction float64, detail string, history []float64, barWidth int) string {
 	clr := usageBarColor(fraction)
 	pct := int(fraction * 100)
 
@@ -242,14 +272,17 @@ func renderChartLine(label string, fraction float64, rawVal string, history []fl
 	pctStr := lipgloss.NewStyle().Foreground(clr).Bold(true).Width(5).Render(
 		fmt.Sprintf("%3d%%", pct))
 
+	// Detail string (actual values)
+	detailStr := lipgloss.NewStyle().Foreground(subtle).Width(22).Render(detail)
+
 	// Sparkline history
-	sparkWidth := barWidth - currentBarWidth - 2
+	sparkWidth := barWidth - currentBarWidth - 22
 	if sparkWidth < 5 {
 		sparkWidth = 5
 	}
 	spark := renderSparkline(history, sparkWidth, clr)
 
-	return "  " + labelStr + currentBar + " " + pctStr + " " + spark
+	return "  " + labelStr + currentBar + " " + pctStr + " " + detailStr + " " + spark
 }
 
 // renderMiniBar draws a compact filled/empty bar.

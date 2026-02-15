@@ -30,6 +30,23 @@ type busyInfo struct {
 // phaseMessage returns a context-aware status message based on elapsed time.
 func (b busyInfo) phaseMessage() string {
 	elapsed := time.Since(b.startTime)
+
+	// Creating takes much longer, use different thresholds
+	if b.operation == "Creating" {
+		switch {
+		case elapsed < 5*time.Second:
+			return "Creating…"
+		case elapsed < 15*time.Second:
+			return "Downloading image…"
+		case elapsed < 30*time.Second:
+			return "Configuring VM…"
+		case elapsed < 50*time.Second:
+			return "Almost ready…"
+		default:
+			return "Hang tight…"
+		}
+	}
+
 	switch {
 	case elapsed < 3*time.Second:
 		return b.operation + "…"
@@ -52,13 +69,27 @@ func (b busyInfo) elapsed() string {
 // It approaches but never reaches 1.0 until the real operation completes.
 func (b busyInfo) progressFraction() float64 {
 	secs := time.Since(b.startTime).Seconds()
-	// Logarithmic curve: rises quickly then asymptotes near 0.95
-	p := 0.95 * (1 - 1/(1+secs/5))
+	// Creating takes longer, use a slower curve
+	divisor := 5.0
+	if b.operation == "Creating" {
+		divisor = 30.0
+	}
+	p := 0.95 * (1 - 1/(1+secs/divisor))
 	if p > 0.95 {
 		p = 0.95
 	}
 	return p
 }
+
+// toast represents a brief auto-dismissing notification.
+type toast struct {
+	message string
+	style   string // "success", "error", "info"
+	created time.Time
+}
+
+// toastDuration is how long a toast stays visible.
+const toastDuration = 4 * time.Second
 
 type tableModel struct {
 	vms         []vmData
@@ -84,6 +115,24 @@ type tableModel struct {
 
 	// Auto-refresh
 	lastRefresh time.Time
+
+	// Toast notifications
+	toasts []toast
+}
+
+// addToast adds a toast notification and returns a command to dismiss it later.
+func (m *tableModel) addToast(message string, style string) tea.Cmd {
+	t := toast{message: message, style: style, created: time.Now()}
+	m.toasts = append(m.toasts, t)
+	created := t.created
+	return tea.Tick(toastDuration, func(_ time.Time) tea.Msg {
+		return toastExpireMsg{created: created}
+	})
+}
+
+// toastExpireMsg signals that a toast should be dismissed.
+type toastExpireMsg struct {
+	created time.Time
 }
 
 func newTableModel() tableModel {
@@ -186,6 +235,16 @@ func (m *tableModel) toggleSortDirection() {
 
 func (m tableModel) Update(msg tea.Msg) (tableModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case toastExpireMsg:
+		// Remove expired toasts
+		var remaining []toast
+		for _, t := range m.toasts {
+			if t.created != msg.created {
+				remaining = append(remaining, t)
+			}
+		}
+		m.toasts = remaining
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -296,6 +355,8 @@ func (m tableModel) visibleRows() int {
 	if m.filterVisible {
 		used++
 	}
+	// Toast lines
+	used += len(m.toasts)
 	// Footer lines vary by width
 	if m.width >= 100 {
 		used += 4 // 2 shortcut lines + status + sep
@@ -476,6 +537,9 @@ func (m tableModel) View() string {
 	}
 	tableBox := tableBorderStyle.Width(boxWidth).Render(tableContent)
 	b.WriteString(tableBox + "\n")
+
+	// Toast notifications
+	b.WriteString(m.renderToasts())
 
 	// Footer
 	b.WriteString(m.renderFooter())
@@ -853,6 +917,38 @@ func renderProgressBar(fraction float64, width int) string {
 	barStr := bar.String()
 
 	return lipgloss.NewStyle().Foreground(accent).Render(barStr)
+}
+
+func (m tableModel) renderToasts() string {
+	if len(m.toasts) == 0 {
+		return ""
+	}
+
+	var lines []string
+	for _, t := range m.toasts {
+		// Calculate fade: toasts fade out in the last second
+		age := time.Since(t.created)
+		remaining := toastDuration - age
+
+		var style lipgloss.Style
+		switch t.style {
+		case "error":
+			style = lipgloss.NewStyle().Foreground(stoppedClr).Bold(true)
+		case "info":
+			style = lipgloss.NewStyle().Foreground(accent).Bold(true)
+		default: // "success"
+			style = lipgloss.NewStyle().Foreground(runningClr).Bold(true)
+		}
+
+		// Dim when fading out (last 1.5s)
+		if remaining < 1500*time.Millisecond {
+			style = style.Bold(false).Italic(true)
+		}
+
+		lines = append(lines, " "+style.Render(t.message))
+	}
+
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func (m tableModel) renderFooter() string {
