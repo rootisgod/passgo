@@ -314,7 +314,7 @@ func (m snapManageModel) View() string {
 
 	// Available content width inside modal
 	modalW := min(80, m.width-4)
-	avail := modalW - 6 - 1 // padding(6) + cursor prefix(1)
+	avail := modalW - 8 - 1 // padding(6) + border(2) + cursor prefix(1)
 
 	// ── Header row ──
 	headerDiv := tableHeaderDivStyle.Render("│")

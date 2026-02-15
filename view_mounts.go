@@ -120,11 +120,15 @@ func (m mountManageModel) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
-	// Table header
-	srcW := 36
-	tgtW := 36
-	header := tableHeaderStyle.Width(srcW).Render("Source (Local)") +
-		tableHeaderStyle.Width(4).Render(" → ") +
+	// Table header — compute column widths from modal inner width
+	modalW := min(80, m.width-4)
+	innerW := modalW - 8 // padding(3*2) + border(1*2)
+	arrowW := 4
+	prefixW := 2
+	srcW := (innerW - prefixW - arrowW) / 2
+	tgtW := innerW - prefixW - arrowW - srcW
+	header := "  " + tableHeaderStyle.Width(srcW).Render("Source (Local)") +
+		tableHeaderStyle.Width(arrowW).Render(" → ") +
 		tableHeaderStyle.Width(tgtW).Render("Target (VM)")
 
 	var rows []string
