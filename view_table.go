@@ -190,6 +190,39 @@ func (m tableModel) Update(msg tea.Msg) (tableModel, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case tea.MouseMsg:
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			if m.cursor > 0 {
+				m.cursor--
+				if m.cursor < m.offset {
+					m.offset = m.cursor
+				}
+			}
+		case tea.MouseWheelDown:
+			if m.cursor < len(m.filteredVMs)-1 {
+				m.cursor++
+				visible := m.visibleRows()
+				if m.cursor >= m.offset+visible {
+					m.offset = m.cursor - visible + 1
+				}
+			}
+		case tea.MouseLeft:
+			// Calculate which row was clicked
+			// Layout: title(1) + filter?(1) + box_border(1) + header(1) + sep(1) = 4 or 5
+			headerLines := 4
+			if m.filterVisible {
+				headerLines++
+			}
+			row := msg.Y - headerLines
+			if row >= 0 {
+				idx := m.offset + row
+				if idx >= 0 && idx < len(m.filteredVMs) {
+					m.cursor = idx
+				}
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		if m.filterFocused {
 			switch msg.String() {
@@ -363,11 +396,19 @@ func (m tableModel) View() string {
 		}
 		title := col.title
 		if i == m.sortColumn {
-			if m.sortAscending {
-				title += " ▲"
-			} else {
-				title += " ▼"
+			arrow := " ▲"
+			if !m.sortAscending {
+				arrow = " ▼"
 			}
+			// Truncate title if needed so title+arrow fits in column width
+			maxTitle := col.width - lipgloss.Width(arrow) - 1 // -1 for padding
+			if maxTitle < 1 {
+				maxTitle = 1
+			}
+			if lipgloss.Width(title) > maxTitle {
+				title = title[:maxTitle]
+			}
+			title += arrow
 		}
 		cell := tableHeaderStyle.Width(col.width).Render(title)
 		if !first {

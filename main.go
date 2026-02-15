@@ -136,6 +136,19 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	// ── Mouse messages ──
+	case tea.MouseMsg:
+		if m.currentView == viewTable {
+			var cmd tea.Cmd
+			m.table, cmd = m.table.Update(msg)
+			return m, cmd
+		}
+		if m.currentView == viewInfo {
+			var cmd tea.Cmd
+			m.info, cmd = m.info.Update(msg)
+			return m, cmd
+		}
+
 	// ── Info refresh tick ──
 	case infoRefreshTickMsg:
 		if m.currentView == viewInfo {
@@ -666,7 +679,7 @@ func main() {
 		appLogger.Println("passgo starting up")
 	}
 
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error running program: %v", err)
 	}
