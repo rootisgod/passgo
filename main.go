@@ -259,7 +259,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentView = viewError
 		} else {
 			m.snapManage = newSnapManageModel(msg.vmName, m.width, m.height)
-			m.snapManage.snapshots = msg.snapshots
+			m.snapManage.setSnapshots(msg.snapshots)
 			m.currentView = viewSnapManage
 		}
 		return m, nil

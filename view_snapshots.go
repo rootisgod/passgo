@@ -164,9 +164,16 @@ func (m snapCreateModel) View() string {
 
 // ─── Snapshot Manager ──────────────────────────────────────────────────────────
 
+// snapTreeNode represents a snapshot in a tree structure.
+type snapTreeNode struct {
+	snap     SnapshotInfo
+	children []*snapTreeNode
+}
+
 type snapManageModel struct {
 	vmName    string
 	snapshots []SnapshotInfo
+	tree      []snapTreeEntry // snapshots in tree display order
 	cursor    int
 	action    int // -1 = list, 0=revert, 1=delete, 2=cancel (when in actions mode)
 	inActions bool
@@ -176,6 +183,66 @@ type snapManageModel struct {
 
 func newSnapManageModel(vmName string, w, h int) snapManageModel {
 	return snapManageModel{vmName: vmName, cursor: 0, action: -1, width: w, height: h}
+}
+
+// setSnapshots stores the snapshots and pre-computes the tree order.
+func (m *snapManageModel) setSnapshots(snaps []SnapshotInfo) {
+	m.snapshots = snaps
+	m.tree = buildSnapTree(snaps)
+}
+
+// snapTreeEntry is a flattened tree row with its display prefix and depth.
+type snapTreeEntry struct {
+	snap   SnapshotInfo
+	prefix string // tree-drawing characters (e.g. "├── ", "│   └── ")
+	depth  int
+}
+
+// buildSnapTree builds a tree from the flat snapshot list and returns it
+// as a flattened display order with tree-drawing prefixes.
+func buildSnapTree(snapshots []SnapshotInfo) []snapTreeEntry {
+	if len(snapshots) == 0 {
+		return nil
+	}
+
+	// Build lookup: name -> snapshot
+	byName := make(map[string]*snapTreeNode, len(snapshots))
+	for _, s := range snapshots {
+		byName[s.Name] = &snapTreeNode{snap: s}
+	}
+
+	// Build tree: attach children to parents
+	var roots []*snapTreeNode
+	for _, s := range snapshots {
+		node := byName[s.Name]
+		if s.Parent != "" {
+			if parent, ok := byName[s.Parent]; ok {
+				parent.children = append(parent.children, node)
+				continue
+			}
+		}
+		roots = append(roots, node)
+	}
+
+	// Flatten tree with YAML-style dash prefixes using DFS
+	var entries []snapTreeEntry
+	var walk func(nodes []*snapTreeNode, depth int)
+	walk = func(nodes []*snapTreeNode, depth int) {
+		for _, node := range nodes {
+			prefix := ""
+			if depth > 0 {
+				prefix = strings.Repeat("  ", depth-1) + "- "
+			}
+			entries = append(entries, snapTreeEntry{
+				snap:   node.snap,
+				prefix: prefix,
+				depth:  depth,
+			})
+			walk(node.children, depth+1)
+		}
+	}
+	walk(roots, 0)
+	return entries
 }
 
 func (m snapManageModel) Update(msg tea.Msg) (snapManageModel, tea.Cmd) {
@@ -192,11 +259,11 @@ func (m snapManageModel) Update(msg tea.Msg) (snapManageModel, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.snapshots)-1 {
+			if m.cursor < len(m.tree)-1 {
 				m.cursor++
 			}
 		case "enter":
-			if len(m.snapshots) > 0 {
+			if len(m.tree) > 0 {
 				m.inActions = true
 				m.action = 0
 			}
@@ -219,7 +286,7 @@ func (m snapManageModel) updateActions(msg tea.KeyMsg) (snapManageModel, tea.Cmd
 			m.action++
 		}
 	case "enter":
-		snap := m.snapshots[m.cursor]
+		snap := m.tree[m.cursor].snap
 		m.inActions = false
 		switch m.action {
 		case 0: // revert
@@ -234,47 +301,117 @@ func (m snapManageModel) updateActions(msg tea.KeyMsg) (snapManageModel, tea.Cmd
 }
 
 func (m snapManageModel) View() string {
-	title := formTitleStyle.Render(fmt.Sprintf("Snapshots for: %s", m.vmName))
+	title := modalTitleStyle.Render(fmt.Sprintf("Snapshots for: %s", m.vmName))
 
-	if len(m.snapshots) == 0 {
+	if len(m.tree) == 0 {
 		content := title + "\n\n" + tableEmptyStyle.Render("No snapshots found") + "\n\n" +
 			formHintStyle.Render("Esc: return")
 		box := modalStyle.Render(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
-	var lines []string
-	for i, snap := range m.snapshots {
+	tree := m.tree
+
+	// Available content width inside modal
+	modalW := min(80, m.width-4)
+	avail := modalW - 6 - 1 // padding(6) + cursor prefix(1)
+
+	// ── Header row ──
+	headerDiv := tableHeaderDivStyle.Render("│")
+
+	// Find the widest tree entry (prefix + name) to size the name column
+	maxNameW := len("Snapshot")
+	for _, e := range tree {
+		w := len(e.prefix) + len(e.snap.Name)
+		if w > maxNameW {
+			maxNameW = w
+		}
+	}
+	nameColW := min(maxNameW+2, avail*2/3)
+	if nameColW < 12 {
+		nameColW = 12
+	}
+	commentColW := avail - nameColW - 1 // -1 for divider
+	showComment := commentColW >= 8
+
+	var headerRow string
+	if showComment {
+		headerRow = " " + tableHeaderStyle.Width(nameColW).Render("Snapshot") +
+			headerDiv + tableHeaderStyle.Width(commentColW).Render("Comment")
+	} else {
+		headerRow = " " + tableHeaderStyle.Width(avail).Render("Snapshot")
+		nameColW = avail
+	}
+
+	// ── Separator row ──
+	dashStyle := lipgloss.NewStyle().Foreground(dimmed)
+	var sepRow string
+	if showComment {
+		sepRow = " " + dashStyle.Render(strings.Repeat("─", nameColW)) +
+			tableColDivStyle.Render("┼") +
+			dashStyle.Render(strings.Repeat("─", commentColW))
+	} else {
+		sepRow = " " + dashStyle.Render(strings.Repeat("─", avail))
+	}
+
+	// ── Tree rows ──
+	div := tableColDivStyle.Render("│")
+
+	var rows []string
+	for i, entry := range tree {
 		selected := i == m.cursor
-		text := snap.Name
-		if snap.Comment != "" {
-			text += " (" + snap.Comment + ")"
-		}
-		if snap.Parent != "" {
-			text += " ← " + snap.Parent
-		}
 
+		cursor := " "
 		if selected {
-			lines = append(lines, listSelectedItemStyle.Render("▸ "+text))
+			cursor = tableCursorStyle.Render("▎")
+		}
+
+		cellStyle := func(width int) lipgloss.Style {
+			if selected {
+				return tableSelectedCellStyle.Width(width)
+			}
+			return tableCellStyle.Width(width)
+		}
+
+		// Build name cell: tree prefix + snapshot name (same color)
+		treePfx := entry.prefix
+		name := entry.snap.Name
+		// Truncate name if needed (accounting for prefix visual width)
+		prefixW := lipgloss.Width(treePfx)
+		maxName := nameColW - prefixW - 1
+		if maxName < 0 {
+			maxName = 0
+		}
+		if len(name) > maxName && maxName > 3 {
+			name = name[:maxName-1] + "…"
+		}
+		nameContent := treePfx + name
+		// Pad to column width
+		nameVisW := lipgloss.Width(nameContent)
+		if nameVisW < nameColW {
+			nameContent += strings.Repeat(" ", nameColW-nameVisW)
+		}
+		// Apply selection background
+		if selected {
+			nameContent = tableSelectedCellStyle.Render(nameContent)
+		}
+
+		var row string
+		if showComment {
+			comment := entry.snap.Comment
+			if len(comment) > commentColW-1 && commentColW > 4 {
+				comment = comment[:commentColW-3] + "…"
+			}
+			row = cursor + nameContent + div + cellStyle(commentColW).Render(comment)
 		} else {
-			lines = append(lines, listItemStyle.Render("  "+text))
+			row = cursor + nameContent
 		}
+		rows = append(rows, row)
 	}
 
-	// Detail panel for selected
-	var detail string
-	if m.cursor >= 0 && m.cursor < len(m.snapshots) {
-		s := m.snapshots[m.cursor]
-		detail = detailKeyStyle.Render("Name: ") + detailValStyle.Render(s.Name) + "\n"
-		if s.Comment != "" {
-			detail += detailKeyStyle.Render("Comment: ") + detailValStyle.Render(s.Comment) + "\n"
-		}
-		if s.Parent != "" {
-			detail += detailKeyStyle.Render("Parent: ") + detailValStyle.Render(s.Parent) + "\n"
-		}
-	}
+	tableContent := headerRow + "\n" + sepRow + "\n" + strings.Join(rows, "\n")
 
-	// Actions overlay
+	// ── Actions overlay ──
 	var actionsLine string
 	if m.inActions {
 		actions := []string{"Revert", "Delete", "Cancel"}
@@ -286,14 +423,16 @@ func (m snapManageModel) View() string {
 			}
 			buttons = append(buttons, style.Render(" "+a+" "))
 		}
-		actionsLine = "\n" + strings.Join(buttons, "  ")
+		actionsLine = "\n\n " + strings.Join(buttons, "  ")
 	}
 
-	hint := formHintStyle.Render("↑↓: navigate  Enter: actions  Esc: return")
+	// ── Footer hints ──
+	hint := footerKeyStyle.Render("↑↓") + " " + footerDescStyle.Render("navigate") + "  " +
+		footerKeyStyle.Render("Enter") + " " + footerDescStyle.Render("actions") + "  " +
+		footerKeyStyle.Render("Esc") + " " + footerDescStyle.Render("return")
 
-	content := title + "\n\n" +
-		strings.Join(lines, "\n") + "\n\n" +
-		detailPanelStyle.Render(detail) +
+	content := title + "\n" +
+		tableContent +
 		actionsLine + "\n\n" + hint
 
 	box := modalStyle.Render(content)
