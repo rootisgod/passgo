@@ -128,7 +128,7 @@ func rebuildStyles() {
 	// ── Title ──
 	titleBarStyle = lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#FFFFFF")).
+		Foreground(accentLight).
 		Background(accent).
 		Padding(0, 1)
 
@@ -262,7 +262,7 @@ func rebuildStyles() {
 		Padding(0, 2)
 
 	formActiveButtonStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF")).
+		Foreground(accentLight).
 		Background(accent).
 		Bold(true).
 		Padding(0, 2)

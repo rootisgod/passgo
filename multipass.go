@@ -138,8 +138,6 @@ func ScanCloudInitFiles() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		defer fileHandle.Close()
-
 		scanner := bufio.NewScanner(fileHandle)
 		if scanner.Scan() {
 			firstLine := strings.TrimSpace(scanner.Text())
@@ -147,6 +145,7 @@ func ScanCloudInitFiles() ([]string, error) {
 				cloudInitFiles = append(cloudInitFiles, fileName)
 			}
 		}
+		fileHandle.Close()
 	}
 	return cloudInitFiles, nil
 }

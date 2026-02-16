@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -705,36 +706,31 @@ func operationToastMessage(vmName, operation string, elapsed time.Duration) stri
 // ─── Sort (moved from old main.go) ────────────────────────────────────────────
 
 func sortVMs(vms []vmData, column int, ascending bool) {
-	n := len(vms)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			var compare bool
-			switch column {
-			case 0:
-				compare = strings.ToLower(vms[j].info.Name) > strings.ToLower(vms[j+1].info.Name)
-			case 1:
-				compare = strings.ToLower(vms[j].info.State) > strings.ToLower(vms[j+1].info.State)
-			case 2:
-				compare = vms[j].info.Snapshots > vms[j+1].info.Snapshots
-			case 3:
-				compare = vms[j].info.IPv4 > vms[j+1].info.IPv4
-			case 4:
-				compare = vms[j].info.CPUs > vms[j+1].info.CPUs
-			case 5:
-				compare = vms[j].info.DiskUsage > vms[j+1].info.DiskUsage
-			case 6:
-				compare = vms[j].info.MemoryUsage > vms[j+1].info.MemoryUsage
-			default:
-				compare = false
-			}
-			if !ascending {
-				compare = !compare
-			}
-			if compare {
-				vms[j], vms[j+1] = vms[j+1], vms[j]
-			}
+	sort.Slice(vms, func(i, j int) bool {
+		var less bool
+		switch column {
+		case 0:
+			less = strings.ToLower(vms[i].info.Name) < strings.ToLower(vms[j].info.Name)
+		case 1:
+			less = strings.ToLower(vms[i].info.State) < strings.ToLower(vms[j].info.State)
+		case 2:
+			less = vms[i].info.Snapshots < vms[j].info.Snapshots
+		case 3:
+			less = vms[i].info.IPv4 < vms[j].info.IPv4
+		case 4:
+			less = vms[i].info.CPUs < vms[j].info.CPUs
+		case 5:
+			less = vms[i].info.DiskUsage < vms[j].info.DiskUsage
+		case 6:
+			less = vms[i].info.MemoryUsage < vms[j].info.MemoryUsage
+		default:
+			less = false
 		}
-	}
+		if !ascending {
+			less = !less
+		}
+		return less
+	})
 }
 
 // ─── Logger ────────────────────────────────────────────────────────────────────

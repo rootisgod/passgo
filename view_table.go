@@ -467,7 +467,7 @@ func (m tableModel) View() string {
 				maxTitle = 1
 			}
 			if lipgloss.Width(title) > maxTitle {
-				title = title[:maxTitle]
+				title = truncateToRunes(title, maxTitle)
 			}
 			title += arrow
 		}
@@ -767,10 +767,10 @@ func (m tableModel) renderRow(vm vmData, cols []tableColumn, selected bool, div 
 			continue
 		}
 
-		// Default: truncate and render
+		// Default: truncate and render (by runes to avoid cutting UTF-8 mid-rune)
 		visibleLen := lipgloss.Width(val)
 		if visibleLen > cols[i].width-2 && cols[i].width > 4 {
-			val = val[:cols[i].width-4] + "…"
+			val = truncateToRunes(val, cols[i].width-4)
 		}
 		cells = append(cells, cellDiv+style.Render(val))
 	}

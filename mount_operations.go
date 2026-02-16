@@ -15,7 +15,7 @@ type MountInfo struct {
 	GIDMaps    []string
 }
 
-// --- JSON parsing types for multipass info --format json ---
+// ─── JSON parsing types for multipass info --format json ───
 
 type multipassInfoResponse struct {
 	Errors []string                         `json:"errors"`
