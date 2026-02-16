@@ -209,6 +209,26 @@ choco install upx  # Windows
 upx --best --lzma passgo-*
 ```
 
+### Security Scanning
+
+PassGo uses [gosec](https://github.com/securego/gosec) for code security analysis and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for dependency vulnerability scanning.
+
+Install the tools (one-time):
+
+```bash
+task install-security-tools
+```
+
+Run security checks:
+
+```bash
+task gosec        # Scan source code for security issues
+task govulncheck  # Check dependencies for known vulnerabilities
+task security     # Run both
+```
+
+These can be added to GitHub Actions for PR checks.
+
 ## Automated Releases
 
 This project uses GitHub Actions to automatically build and release binaries for all supported platforms when code is pushed to the main branch. Each release includes:

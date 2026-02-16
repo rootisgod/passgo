@@ -79,3 +79,22 @@ tasks:
     cmds:
      - multipass delete --all
      - multipass purge
+
+  install-security-tools:
+    cmds:
+      - go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
+    silent: true
+
+  gosec:
+    cmds:
+      - gosec -quiet ./...
+
+  govulncheck:
+    cmds:
+      - govulncheck -show verbose ./...
+
+  security:
+    cmds:
+      - task: gosec
+      - task: govulncheck
