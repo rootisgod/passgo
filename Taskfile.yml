@@ -90,9 +90,13 @@ tasks:
     cmds:
       - gosec -quiet ./...
 
-  govulncheck:
+  govulncheck-verbose:
     cmds:
       - govulncheck -show verbose ./...
+
+  govulncheck:
+    cmds:
+      - govulncheck ./...
 
   security:
     cmds:

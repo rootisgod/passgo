@@ -1,5 +1,6 @@
 ---
 name: code-reviewer
+model: inherit
 description: PassGo code reviewer. Use after changes or for PR review. Checks Go style, Bubble Tea patterns, UI consistency, and feature conventions. Use proactively after writing or modifying code.
 ---
 
