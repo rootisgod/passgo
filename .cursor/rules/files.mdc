@@ -1,0 +1,15 @@
+---
+description: File organization and layout
+globs: ["**/*.go"]
+alwaysApply: false
+---
+
+# File Organization
+
+- main.go: rootModel, view routing, handleKey, setChildSizes
+- messages.go: Msg types and tea.Cmd factories for async ops
+- view_*.go: one view per file (view_table, view_info, view_create, etc.)
+- styles.go: lipgloss styles, rebuildStyles(), stateColor/stateIcon
+- themes.go: theme definitions, currentTheme(), setTheme()
+- multipass.go: multipass CLI calls
+- parsing.go: VMInfo, SnapshotInfo, parseVMInfo, parseSnapshots

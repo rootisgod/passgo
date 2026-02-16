@@ -1,0 +1,13 @@
+---
+description: How to add new features
+globs: ["**/*.go"]
+alwaysApply: false
+---
+
+# Adding New Features
+
+1. New view: add viewState, child model, setChildSizes entry, Update/View/handleKey cases
+2. New async op: add Msg type and Cmd factory in messages.go; handle Msg in root Update
+3. New shortcut: add case in handleKey (viewTable), update renderFooter and help
+4. Toast: m.table.addToast(msg, "success"|"error"|"info")
+5. Inline op: m.table.busyVMs[name] = busyInfo{operation, startTime}; return cmd with inline:true

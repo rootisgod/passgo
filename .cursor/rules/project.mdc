@@ -1,0 +1,13 @@
+---
+description: PassGo project overview and architecture
+globs: 
+alwaysApply: true
+---
+
+# PassGo - Multipass VM Manager
+
+- Go TUI using Bubble Tea (Elm architecture)
+- Single package `main`
+- Root model in main.go routes to child models by viewState
+- Async work via tea.Cmd returning typed Msg in messages.go
+- Styling via lipgloss in styles.go; themes in themes.go

@@ -1,0 +1,13 @@
+---
+description: UI styling and consistency
+globs: ["**/view_*.go", "**/styles.go", "**/themes.go"]
+alwaysApply: false
+---
+
+# UI Styling
+
+- Use theme colors (accent, subtle, dimmed, highlight, runningClr, etc.) from styles.go
+- Table-like views: tableBorderStyle, tableHeaderStyle, tableColDivStyle, tableCursorStyle
+- Selection: tableCursorStyle "▎" prefix + tableSelectedCellStyle (no background fill)
+- Modals: lipgloss.Place(center) for centering
+- Responsive: check m.width for narrow layouts; hide/shrink columns by priority

@@ -1,0 +1,11 @@
+---
+description: Testing conventions
+globs: ["**/*_test.go"]
+alwaysApply: false
+---
+
+# Testing
+
+- Unit tests: main_test.go, multipass_test.go, parsing tests
+- Integration tests: integration_test.go (require multipass)
+- Run: go test ./... (skip integration with -short)

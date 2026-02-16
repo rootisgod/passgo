@@ -1,0 +1,12 @@
+---
+description: Go style conventions
+globs: ["**/*.go"]
+alwaysApply: false
+---
+
+# Go Style
+
+- Use section comments: // ─── Section Name ───
+- Prefer value receivers unless mutation needed
+- Keep models small; extract helpers (e.g. renderRow, computeColumnWidths)
+- Use min/max from stdlib (Go 1.21+)

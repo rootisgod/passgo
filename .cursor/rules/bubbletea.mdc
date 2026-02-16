@@ -1,0 +1,13 @@
+---
+description: Bubble Tea framework conventions
+globs: ["**/*.go"]
+alwaysApply: false
+---
+
+# Bubble Tea Conventions
+
+- Models: Init() tea.Cmd, Update(msg) (Model, tea.Cmd), View() string
+- Async ops: define Msg type in messages.go, return tea.Cmd that produces it
+- Child models receive width/height; call setChildSizes() when creating or resizing
+- New views: add viewState const, child model field, case in Update/View/handleKey
+- Inline ops: set busyVMs[name] before cmd, clear on vmOperationResultMsg
