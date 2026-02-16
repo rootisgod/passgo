@@ -2,7 +2,7 @@
 package main
 
 import (
-	"math/rand"
+	"crypto/rand"
 	"unicode/utf8"
 )
 
@@ -29,8 +29,11 @@ func truncateToRunes(s string, maxRunes int) string {
 func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+		b[i] = charset[int(b[i])%len(charset)]
 	}
 	return string(b)
 }

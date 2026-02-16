@@ -195,7 +195,7 @@ func advancedCreateCmd(name, release string, cpus, memoryMB, diskGB int, cloudIn
 func stopAllVMsCmd(names []string) tea.Cmd {
 	return func() tea.Msg {
 		for _, name := range names {
-			StopVM(name)
+			_, _ = StopVM(name)
 		}
 		return vmOperationResultMsg{operation: "stop-all"}
 	}
@@ -205,7 +205,7 @@ func stopAllVMsCmd(names []string) tea.Cmd {
 func startAllVMsCmd(names []string) tea.Cmd {
 	return func() tea.Msg {
 		for _, name := range names {
-			StartVM(name)
+			_, _ = StartVM(name)
 		}
 		return vmOperationResultMsg{operation: "start-all"}
 	}

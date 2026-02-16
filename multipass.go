@@ -13,7 +13,7 @@ import (
 
 // runMultipassCommand executes multipass commands with variadic arguments
 func runMultipassCommand(args ...string) (string, error) {
-	cmd := exec.Command("multipass", args...)
+	cmd := exec.Command("multipass", args...) // #nosec G204 -- multipass CLI wrapper
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -80,7 +80,7 @@ func ExecInVM(vmName string, commandArgs ...string) (string, error) {
 }
 
 func ShellVM(vmName string) error {
-	cmd := exec.Command("multipass", "shell", vmName)
+	cmd := exec.Command("multipass", "shell", vmName) // #nosec G204 -- VM name from user selection
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -134,7 +134,7 @@ func ScanCloudInitFiles() ([]string, error) {
 		}
 
 		filePath := filepath.Join(currentDir, fileName)
-		fileHandle, err := os.Open(filePath)
+		fileHandle, err := os.Open(filePath) // #nosec G304 -- path from Getwd+ReadDir
 		if err != nil {
 			continue
 		}
@@ -145,7 +145,7 @@ func ScanCloudInitFiles() ([]string, error) {
 				cloudInitFiles = append(cloudInitFiles, fileName)
 			}
 		}
-		fileHandle.Close()
+		_ = fileHandle.Close()
 	}
 	return cloudInitFiles, nil
 }
@@ -180,7 +180,7 @@ func ReadConfigGithubRepo() (string, error) {
 	if appLogger != nil {
 		appLogger.Printf("reading config: %s", configPath)
 	}
-	file, err := os.Open(configPath)
+	file, err := os.Open(configPath) // #nosec G304 -- .config in current dir
 	if err != nil {
 		if appLogger != nil {
 			appLogger.Printf("config open error: %v", err)
@@ -241,14 +241,14 @@ func CloneRepoAndScanYAMLs(repoURL string) ([]TemplateOption, string, error) {
 	}
 
 	// Shallow clone
-	cmd := exec.Command("git", "clone", "--depth", "1", repoURL, tmpDir)
+	cmd := exec.Command("git", "clone", "--depth", "1", repoURL, tmpDir) // #nosec G204 -- repo URL from user .config
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if appLogger != nil {
 			appLogger.Printf("git clone failed: %v; %s", err, strings.TrimSpace(stderr.String()))
 		}
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, "", fmt.Errorf("git clone failed: %v; %s", err, stderr.String())
 	}
 
@@ -271,7 +271,7 @@ func CloneRepoAndScanYAMLs(repoURL string) ([]TemplateOption, string, error) {
 		return nil
 	})
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil, "", fmt.Errorf("failed to scan repo: %v", err)
 	}
 	if appLogger != nil {

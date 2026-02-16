@@ -337,7 +337,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentView = viewLoading
 		return m, tea.Batch(m.loading.Init(), func() tea.Msg {
 			// Unmount old, then mount new
-			runMultipassCommand("umount", msg.vmName+":"+msg.oldTarget)
+			_, _ = runMultipassCommand("umount", msg.vmName+":"+msg.oldTarget)
 			_, err := runMultipassCommand("mount", msg.newSource, msg.vmName+":"+msg.newTarget)
 			return vmOperationResultMsg{vmName: msg.vmName, operation: "mount", err: err}
 		})
@@ -518,7 +518,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "s":
 			if vm, ok := m.table.selectedVM(); ok {
-				c := exec.Command("multipass", "shell", vm.Name)
+				c := exec.Command("multipass", "shell", vm.Name) // #nosec G204 -- VM name from table selection
 				return m, tea.ExecProcess(c, func(err error) tea.Msg {
 					return shellFinishedMsg{err: err}
 				})
@@ -741,11 +741,11 @@ func initLogger() error {
 		return err
 	}
 	logDir := filepath.Join(home, ".passgo")
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
+	if err := os.MkdirAll(logDir, 0o750); err != nil {
 		return err
 	}
 	logPath := filepath.Join(logDir, "passgo.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- path from UserHomeDir
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}

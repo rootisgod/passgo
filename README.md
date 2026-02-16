@@ -178,7 +178,7 @@ Snapshot operations are only available on stopped VMs:
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.24.13 or later
 - Multipass installed and configured
 
 ### Building Multi-platform Binaries

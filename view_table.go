@@ -806,7 +806,9 @@ func parseSize(s string) float64 {
 	s = strings.TrimSpace(s)
 	var val float64
 	var unit string
-	fmt.Sscanf(s, "%f%s", &val, &unit)
+	if _, err := fmt.Sscanf(s, "%f%s", &val, &unit); err != nil {
+		return 0
+	}
 	switch {
 	case strings.HasPrefix(unit, "GiB"), strings.HasPrefix(unit, "G"):
 		return val * 1024
@@ -828,9 +830,13 @@ func parseCPULoadFraction(load string, cpus string) (float64, bool) {
 		return 0, false
 	}
 	var loadVal float64
-	fmt.Sscanf(fields[0], "%f", &loadVal)
+	if _, err := fmt.Sscanf(fields[0], "%f", &loadVal); err != nil {
+		return 0, false
+	}
 	var cpuCount float64
-	fmt.Sscanf(cpus, "%f", &cpuCount)
+	if _, err := fmt.Sscanf(cpus, "%f", &cpuCount); err != nil {
+		return 0, false
+	}
 	if cpuCount <= 0 {
 		cpuCount = 1
 	}
