@@ -11,3 +11,4 @@ alwaysApply: true
 - Root model in main.go routes to child models by viewState
 - Async work via tea.Cmd returning typed Msg in messages.go
 - Styling via lipgloss in styles.go; themes in themes.go
+- See ARCHITECTURE.md for data flow, file map, message flow, and view state machine
