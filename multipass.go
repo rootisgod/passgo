@@ -2,13 +2,14 @@
 package main
 
 import (
-	"bufio"         // For reading files line by line
-	"bytes"         // For handling byte data (used with command output)
-	"fmt"           // For formatted printing and string formatting
-	"os"            // For operating system operations (like reading directories)
-	"os/exec"       // For running external commands (like multipass)
-	"path/filepath" // For handling file paths in a cross-platform way
-	"strings"       // For string manipulation functions
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // runMultipassCommand executes multipass commands with variadic arguments
@@ -30,23 +31,61 @@ func runMultipassCommand(args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+// NetworkInfo represents an interface from multipass networks.
+// Works on Linux (QEMU), Windows (Hyper-V/VirtualBox), macOS (QEMU/VirtualBox).
+type NetworkInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+// networksJSON is the response structure from multipass networks --format json.
+type networksJSON struct {
+	List []NetworkInfo `json:"list"`
+}
+
+// ListNetworks returns available interfaces for bridged networking.
+// Returns nil slice and error if multipass networks is unsupported (e.g. Linux LXD).
+func ListNetworks() ([]NetworkInfo, error) {
+	output, err := runMultipassCommand("networks", "--format", "json")
+	if err != nil {
+		if appLogger != nil {
+			appLogger.Printf("multipass networks unavailable: %v", err)
+		}
+		return nil, err
+	}
+	var resp networksJSON
+	if err := json.Unmarshal([]byte(output), &resp); err != nil {
+		if appLogger != nil {
+			appLogger.Printf("multipass networks parse error: %v", err)
+		}
+		return nil, fmt.Errorf("failed to parse networks: %w", err)
+	}
+	return resp.List, nil
+}
+
 // LaunchVM creates a new virtual machine with basic settings
 func LaunchVM(name, release string) (string, error) {
 	args := []string{"launch", "--name", name, release}
 	return runMultipassCommand(args...)
 }
 
-// LaunchVMAdvanced creates VM with custom resource settings
-func LaunchVMAdvanced(name, release string, cpus int, memoryMB int, diskGB int) (string, error) {
+// LaunchVMAdvanced creates VM with custom resource settings.
+// networkName: "" = NAT, "bridged" = --bridged (uses configured default), else --network <name>.
+func LaunchVMAdvanced(name, release string, cpus int, memoryMB int, diskGB int, networkName string) (string, error) {
 	args := []string{
 		"launch",
 		"--name", name,
 		"--cpus", fmt.Sprintf("%d", cpus),
 		"--memory", fmt.Sprintf("%dM", memoryMB),
 		"--disk", fmt.Sprintf("%dG", diskGB),
-		release,
 	}
-
+	if networkName == "bridged" {
+		args = append(args, "--bridged")
+	} else if networkName != "" {
+		args = append(args, "--network", networkName)
+	}
+	args = append(args, release)
 	return runMultipassCommand(args...)
 }
 
@@ -150,7 +189,9 @@ func ScanCloudInitFiles() ([]string, error) {
 	return cloudInitFiles, nil
 }
 
-func LaunchVMWithCloudInit(name, release string, cpus int, memoryMB int, diskGB int, cloudInitFile string) (string, error) {
+// LaunchVMWithCloudInit creates VM with cloud-init.
+// networkName: "" = NAT, "bridged" = --bridged, else --network <name>.
+func LaunchVMWithCloudInit(name, release string, cpus int, memoryMB int, diskGB int, cloudInitFile, networkName string) (string, error) {
 	args := []string{
 		"launch",
 		"--name", name,
@@ -158,9 +199,13 @@ func LaunchVMWithCloudInit(name, release string, cpus int, memoryMB int, diskGB 
 		"--memory", fmt.Sprintf("%dM", memoryMB),
 		"--disk", fmt.Sprintf("%dG", diskGB),
 		"--cloud-init", cloudInitFile,
-		release,
 	}
-
+	if networkName == "bridged" {
+		args = append(args, "--bridged")
+	} else if networkName != "" {
+		args = append(args, "--network", networkName)
+	}
+	args = append(args, release)
 	return runMultipassCommand(args...)
 }
 

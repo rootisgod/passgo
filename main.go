@@ -319,7 +319,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.table.busyVMs[msg.name] = busyInfo{operation: "Creating", startTime: time.Now()}
 		m.currentView = viewTable
-		return m, advancedCreateCmd(msg.name, msg.release, msg.cpus, msg.memoryMB, msg.diskGB, msg.cloudInitFile)
+		return m, advancedCreateCmd(msg.name, msg.release, msg.cpus, msg.memoryMB, msg.diskGB, msg.cloudInitFile, msg.networkName)
 
 	case mountAddRequestMsg:
 		m.mountAdd = newMountAddModel(msg.vmName, m.width, m.height)

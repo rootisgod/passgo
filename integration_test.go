@@ -359,7 +359,7 @@ func TestIntegrationAdvancedVMCreation(t *testing.T) {
 		t.Logf("Creating advanced VM with: cpus=%d, memory=%dMB, disk=%dGB",
 			cpus, memoryMB, diskGB)
 
-		_, err := LaunchVMAdvanced(vmName, "22.04", cpus, memoryMB, diskGB)
+		_, err := LaunchVMAdvanced(vmName, "22.04", cpus, memoryMB, diskGB, "")
 		if err != nil {
 			t.Fatalf("Failed to create advanced VM: %v", err)
 		}

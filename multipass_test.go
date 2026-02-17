@@ -387,7 +387,7 @@ func TestBuildLaunchVMAdvancedArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildLaunchAdvancedArgs(tt.vmName, tt.release, tt.cpus, tt.memoryMB, tt.diskGB)
+			result := buildLaunchAdvancedArgs(tt.vmName, tt.release, tt.cpus, tt.memoryMB, tt.diskGB, "")
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("Got %d args, want %d\nGot: %v\nWant: %v",
@@ -405,15 +405,21 @@ func TestBuildLaunchVMAdvancedArgs(t *testing.T) {
 }
 
 // buildLaunchAdvancedArgs constructs arguments for advanced VM launch
-func buildLaunchAdvancedArgs(name, release string, cpus, memoryMB, diskGB int) []string {
-	return []string{
+func buildLaunchAdvancedArgs(name, release string, cpus, memoryMB, diskGB int, networkName string) []string {
+	args := []string{
 		"launch",
 		"--name", name,
 		"--cpus", fmt.Sprintf("%d", cpus),
 		"--memory", fmt.Sprintf("%dM", memoryMB),
 		"--disk", fmt.Sprintf("%dG", diskGB),
-		release,
 	}
+	if networkName == "bridged" {
+		args = append(args, "--bridged")
+	} else if networkName != "" {
+		args = append(args, "--network", networkName)
+	}
+	args = append(args, release)
+	return args
 }
 
 // TestResourceFormatting tests the formatting of resource specifications

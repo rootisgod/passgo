@@ -19,6 +19,7 @@ type advCreateMsg struct {
 	memoryMB      int
 	diskGB        int
 	cloudInitFile string
+	networkName   string // "" = NAT, "bridged" = --bridged, else --network <name>
 }
 
 type advCreateModel struct {
@@ -31,6 +32,9 @@ type advCreateModel struct {
 	cloudInitOptions []string // display labels
 	cloudInitPaths   []string // actual file paths (aligned with options)
 	cleanupDirs      []string
+	// Network
+	networkOptions []string // display labels
+	networkNames   []string // actual names for --network or "bridged" (aligned with options)
 }
 
 type advField struct {
@@ -53,6 +57,24 @@ func newAdvCreateModel(width, height int) advCreateModel {
 	for _, opt := range templateOptions {
 		cloudInitLabels = append(cloudInitLabels, opt.Label)
 		cloudInitPaths = append(cloudInitPaths, opt.Path)
+	}
+
+	// Build network options from multipass networks (cross-platform)
+	networkOptions := []string{"Default (NAT)"}
+	networkNames := []string{""}
+	if nets, err := ListNetworks(); err == nil && len(nets) > 0 {
+		for _, n := range nets {
+			label := fmt.Sprintf("Bridged: %s (%s)", n.Name, n.Description)
+			if len(label) > 50 {
+				label = truncateToRunes(label, 47) + "..."
+			}
+			networkOptions = append(networkOptions, label)
+			networkNames = append(networkNames, n.Name)
+		}
+	} else {
+		// Fallback when multipass networks unsupported (e.g. Linux LXD)
+		networkOptions = append(networkOptions, "Bridged (default)")
+		networkNames = append(networkNames, "bridged")
 	}
 
 	nameInput := textinput.New()
@@ -78,6 +100,7 @@ func newAdvCreateModel(width, height int) advCreateModel {
 		{label: "CPU Cores", input: cpuInput, isNumeric: true},
 		{label: "RAM (MB)", input: ramInput, isNumeric: true},
 		{label: "Disk (GB)", input: diskInput, isNumeric: true},
+		{label: "Network", isSelect: true, options: networkOptions, optionIdx: 0},
 		{label: "Cloud-init", isSelect: true, options: cloudInitLabels, optionIdx: 0},
 		{label: "[ Create ]", isSubmit: true},
 		{label: "[ Cancel ]", isCancel: true},
@@ -91,6 +114,8 @@ func newAdvCreateModel(width, height int) advCreateModel {
 		cloudInitOptions: cloudInitLabels,
 		cloudInitPaths:   cloudInitPaths,
 		cleanupDirs:      cleanupDirs,
+		networkOptions:   networkOptions,
+		networkNames:     networkNames,
 	}
 }
 
@@ -258,7 +283,13 @@ func (m advCreateModel) submit() tea.Cmd {
 		disk = DefaultDiskGB
 	}
 
-	cloudInitIdx := m.fields[5].optionIdx
+	networkIdx := m.fields[5].optionIdx
+	networkName := ""
+	if networkIdx > 0 && networkIdx < len(m.networkNames) {
+		networkName = m.networkNames[networkIdx]
+	}
+
+	cloudInitIdx := m.fields[6].optionIdx
 	cloudInitFile := ""
 	if cloudInitIdx > 0 && cloudInitIdx < len(m.cloudInitPaths) {
 		cloudInitFile = m.cloudInitPaths[cloudInitIdx]
@@ -274,6 +305,7 @@ func (m advCreateModel) submit() tea.Cmd {
 			memoryMB:      ram,
 			diskGB:        disk,
 			cloudInitFile: cloudInitFile,
+			networkName:   networkName,
 		}
 	}
 }

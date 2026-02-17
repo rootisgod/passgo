@@ -179,13 +179,13 @@ func quickCreateCmd(name string) tea.Cmd {
 }
 
 // advancedCreateCmd creates a VM with custom settings.
-func advancedCreateCmd(name, release string, cpus, memoryMB, diskGB int, cloudInitFile string) tea.Cmd {
+func advancedCreateCmd(name, release string, cpus, memoryMB, diskGB int, cloudInitFile, networkName string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if cloudInitFile == "" {
-			_, err = LaunchVMAdvanced(name, release, cpus, memoryMB, diskGB)
+			_, err = LaunchVMAdvanced(name, release, cpus, memoryMB, diskGB, networkName)
 		} else {
-			_, err = LaunchVMWithCloudInit(name, release, cpus, memoryMB, diskGB, cloudInitFile)
+			_, err = LaunchVMWithCloudInit(name, release, cpus, memoryMB, diskGB, cloudInitFile, networkName)
 		}
 		return vmOperationResultMsg{vmName: name, operation: "create", err: err, inline: true}
 	}
