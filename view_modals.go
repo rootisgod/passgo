@@ -42,6 +42,7 @@ func (m helpModel) View() string {
 		{"n", "Create snapshot"},
 		{"m", "Manage snapshots"},
 		{"M", "Manage mounts"},
+		{"o", "VM Options (CPU/RAM/Disk)"},
 		{"v", "Version"},
 		{"1-0", "Switch theme (1-9, 0)"},
 		{"q", "Quit"},

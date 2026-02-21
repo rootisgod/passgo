@@ -61,6 +61,14 @@ type autoRefreshTickMsg time.Time
 // infoRefreshTickMsg fires periodically to refresh the VM info detail view.
 type infoRefreshTickMsg time.Time
 
+// optionsResultMsg carries the result of loading VM options.
+type optionsResultMsg struct {
+	vmName string
+	config ResourceConfig
+	limits HostLimits
+	err    error
+}
+
 // ─── Auto-Refresh ──────────────────────────────────────────────────────────────
 
 const autoRefreshInterval = 1 * time.Second
@@ -282,5 +290,20 @@ func umountCmd(vmName, target string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := runMultipassCommand("umount", vmName+":"+target)
 		return vmOperationResultMsg{vmName: vmName, operation: "umount", err: err}
+	}
+}
+
+// loadOptionsCmd loads VM resource options.
+func loadOptionsCmd(vmName string) tea.Cmd {
+	return func() tea.Msg {
+		config, err := getVMResourceConfig(vmName)
+		if err != nil {
+			return optionsResultMsg{vmName: vmName, config: ResourceConfig{}, limits: HostLimits{}, err: err}
+		}
+		limits, err := getHostLimits()
+		if err != nil {
+			return optionsResultMsg{vmName: vmName, config: config, limits: HostLimits{}, err: err}
+		}
+		return optionsResultMsg{vmName: vmName, config: config, limits: limits, err: nil}
 	}
 }

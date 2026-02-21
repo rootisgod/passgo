@@ -974,7 +974,7 @@ func (m tableModel) renderFooter() string {
 		{"<", "StopAll"}, {">", "StartAll"}, {"!", "Purge"},
 	}
 	navOps := []struct{ key, desc string }{
-		{"i", "Info"}, {"s", "Shell"}, {"n", "Snap"}, {"m", "Snaps"}, {"M", "Mount"},
+		{"i", "Info"}, {"s", "Shell"}, {"n", "Snap"}, {"m", "Snaps"}, {"M", "Mount"}, {"o", "Options"},
 	}
 	appOps := []struct{ key, desc string }{
 		{"f", "Filter"}, {"/", "Refresh"}, {"1-0", "Theme"}, {"h", "Help"}, {"q", "Quit"},
