@@ -40,6 +40,7 @@ const (
 	viewMountManage
 	viewMountAdd
 	viewMountModify
+	viewOptions
 )
 
 // ─── Root Model ────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ type rootModel struct {
 	mountManage mountManageModel
 	mountAdd    mountAddModel
 	mountModify mountModifyModel
+	options     optionsModel
 
 	// Pending operation for confirm dialogs
 	pendingCmd tea.Cmd
@@ -101,6 +103,8 @@ func (m *rootModel) setChildSizes() {
 	m.mountAdd.height = m.height
 	m.mountModify.width = m.width
 	m.mountModify.height = m.height
+	m.options.width = m.width
+	m.options.height = m.height
 }
 
 func initialModel() rootModel {
@@ -340,6 +344,17 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, err := runMultipassCommand("mount", msg.newSource, msg.vmName+":"+msg.newTarget)
 			return vmOperationResultMsg{vmName: msg.vmName, operation: "mount", err: err}
 		})
+
+	case optionsResultMsg:
+		if msg.err != nil {
+			m.errModal = newErrorModel("Options Error", msg.err.Error())
+			m.setChildSizes()
+			m.currentView = viewError
+		} else {
+			m.options = newOptionsModel(msg.vmName, msg.config, msg.limits, m.width, m.height)
+			m.currentView = viewOptions
+		}
+		return m, nil
 	}
 
 	// ── Toast expiry (always route to table regardless of view) ──
@@ -378,6 +393,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewMountModify:
 		var cmd tea.Cmd
 		m.mountModify, cmd = m.mountModify.Update(msg)
+		return m, cmd
+	case viewOptions:
+		var cmd tea.Cmd
+		m.options, cmd = m.options.Update(msg)
 		return m, cmd
 	}
 
@@ -557,6 +576,19 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.currentView = viewLoading
 				return m, tea.Batch(m.loading.Init(), fetchMountsCmd(vm.Name))
 			}
+		case "o":
+			if vm, ok := m.table.selectedVM(); ok {
+				if vm.State != "Stopped" {
+					m.errModal = newErrorModel("Options Error", fmt.Sprintf("VM '%s' must be stopped to modify options.", vm.Name))
+					m.setChildSizes()
+					m.currentView = viewError
+					return m, nil
+				}
+				m.loading = newLoadingModel("Loading options…")
+				m.setChildSizes()
+				m.currentView = viewLoading
+				return m, tea.Batch(m.loading.Init(), loadOptionsCmd(vm.Name))
+			}
 		}
 
 		// Pass remaining keys to table for navigation
@@ -619,6 +651,11 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.mountModify, cmd = m.mountModify.Update(msg)
 		return m, cmd
+
+	case viewOptions:
+		var cmd tea.Cmd
+		m.options, cmd = m.options.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -654,6 +691,8 @@ func (m rootModel) View() string {
 		return m.mountAdd.View()
 	case viewMountModify:
 		return m.mountModify.View()
+	case viewOptions:
+		return m.options.View()
 	default:
 		return "Unknown view"
 	}
@@ -697,6 +736,8 @@ func operationToastMessage(vmName, operation string, elapsed time.Duration) stri
 		return fmt.Sprintf("✓ All VMs started%s", timeStr)
 	case "purge":
 		return fmt.Sprintf("✓ All deleted VMs purged%s", timeStr)
+	case "set-options":
+		return fmt.Sprintf("✓ Options updated for %s%s", vmName, timeStr)
 	default:
 		return fmt.Sprintf("✓ %s %s%s", vmName, operation, timeStr)
 	}
