@@ -43,6 +43,8 @@ func (m helpModel) View() string {
 		{"m", "Manage snapshots"},
 		{"M", "Manage mounts"},
 		{"v", "Version"},
+		{"?", "Toggle AI chat panel"},
+		{"L", "LLM settings"},
 		{"1-0", "Switch theme (1-9, 0)"},
 		{"q", "Quit"},
 	}

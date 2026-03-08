@@ -349,6 +349,278 @@ func (m tableModel) Update(msg tea.Msg) (tableModel, tea.Cmd) {
 	return m, nil
 }
 
+// ViewContentOnly renders just the table box + toasts (no title bar, no footer).
+// Used by the root View for the unified split layout.
+func (m tableModel) ViewContentOnly() string {
+	var b strings.Builder
+
+	// ── Filter bar ──
+	if m.filterVisible {
+		if m.filterFocused {
+			b.WriteString(" " + filterIconStyle.Render("⌕ ") + m.filterInput.View() + "\n")
+		} else {
+			dim := " " + filterIconStyle.Render("⌕ ") + filterInactiveStyle.Render(m.filterText)
+			b.WriteString(dim + "\n")
+		}
+	}
+
+	cols := m.computeColumnWidths()
+	div := tableColDivStyle.Render("│")
+	headerDiv := tableHeaderDivStyle.Render("│")
+
+	var headerCells []string
+	first := true
+	for i, col := range cols {
+		if col.hidden {
+			continue
+		}
+		title := col.title
+		if i == m.sortColumn {
+			arrow := " ▲"
+			if !m.sortAscending {
+				arrow = " ▼"
+			}
+			maxTitle := col.width - lipgloss.Width(arrow) - 1
+			if maxTitle < 1 {
+				maxTitle = 1
+			}
+			if lipgloss.Width(title) > maxTitle {
+				title = truncateToRunes(title, maxTitle)
+			}
+			title += arrow
+		}
+		cell := tableHeaderStyle.Width(col.width).Render(title)
+		if !first {
+			cell = headerDiv + cell
+		}
+		first = false
+		headerCells = append(headerCells, cell)
+	}
+	headerRow := " " + strings.Join(headerCells, "")
+
+	var sepParts []string
+	first = true
+	for _, c := range cols {
+		if c.hidden {
+			continue
+		}
+		if !first {
+			sepParts = append(sepParts, tableColDivStyle.Render("┼"))
+		}
+		first = false
+		sepParts = append(sepParts, lipgloss.NewStyle().Foreground(dimmed).Render(strings.Repeat("─", c.width)))
+	}
+	sepRow := " " + strings.Join(sepParts, "")
+
+	visible := m.visibleRows()
+	var rows []string
+	if len(m.filteredVMs) == 0 {
+		rows = append(rows, tableEmptyStyle.Render(" No VMs found"))
+	} else {
+		end := min(m.offset+visible, len(m.filteredVMs))
+		for i := m.offset; i < end; i++ {
+			vm := m.filteredVMs[i]
+			selected := i == m.cursor
+			rows = append(rows, m.renderRow(vm, cols, selected, div))
+		}
+	}
+
+	rendered := len(rows)
+	for i := rendered; i < visible; i++ {
+		rows = append(rows, "")
+	}
+
+	tableContent := headerRow + "\n" + sepRow + "\n" + strings.Join(rows, "\n")
+
+	tableWidth := 2
+	visibleCols := 0
+	for _, c := range cols {
+		if !c.hidden {
+			tableWidth += c.width
+			visibleCols++
+		}
+	}
+	if visibleCols > 1 {
+		tableWidth += visibleCols - 1
+	}
+
+	boxWidth := min(tableWidth+4, m.width-2)
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
+	tableBox := tableBorderStyle.Width(boxWidth).Render(tableContent)
+	b.WriteString(tableBox)
+
+	toasts := m.renderToasts()
+	if toasts != "" {
+		b.WriteString("\n" + toasts)
+	}
+
+	return b.String()
+}
+
+// ViewWithoutFooter renders the table without the footer section.
+func (m tableModel) ViewWithoutFooter() string {
+	var b strings.Builder
+
+	// ── Title bar (full-width accent background, never wraps) ──
+	vmCount := len(m.filteredVMs)
+	totalCount := len(m.vms)
+	countText := fmt.Sprintf(" %d VMs", totalCount)
+	if vmCount != totalCount {
+		countText = fmt.Sprintf(" %d/%d VMs", vmCount, totalCount)
+	}
+	liveIndicator := " ● LIVE"
+	themeName := " ◈ " + currentTheme().Name + " "
+
+	w := m.width
+	if w < 1 {
+		w = 80
+	}
+
+	bgStyle := lipgloss.NewStyle().Background(accent)
+	themeStyle := lipgloss.NewStyle().Foreground(currentTheme().Highlight).Background(accent)
+
+	titleLabel := " ◆ Multipass"
+	leftParts := titleBarStyle.Render(titleLabel)
+	leftWidth := lipgloss.Width(leftParts)
+
+	liveWidth := lipgloss.Width(liveIndicator)
+	countWidth := lipgloss.Width(countText)
+	themeWidth := lipgloss.Width(themeName)
+
+	showCount := leftWidth+countWidth <= w
+	showLive := showCount && leftWidth+countWidth+liveWidth <= w
+	showTheme := leftWidth+countWidth+themeWidth <= w
+
+	if showCount {
+		leftParts += titleVMCountStyle.Render(countText)
+		leftWidth += countWidth
+	}
+	if showLive {
+		leftParts += titleLiveStyle.Render(liveIndicator)
+		leftWidth += liveWidth
+	}
+
+	rightPart := ""
+	if showTheme {
+		gap := w - leftWidth - themeWidth
+		if gap > 0 {
+			rightPart = bgStyle.Render(strings.Repeat(" ", gap)) + themeStyle.Render(themeName)
+		}
+	}
+
+	titleText := leftParts + rightPart
+	titleVisibleWidth := lipgloss.Width(titleText)
+	if w > titleVisibleWidth {
+		pad := strings.Repeat(" ", w-titleVisibleWidth)
+		titleText += bgStyle.Render(pad)
+	}
+	b.WriteString(titleText + "\n")
+
+	// ── Filter bar ──
+	if m.filterVisible {
+		if m.filterFocused {
+			b.WriteString(" " + filterIconStyle.Render("⌕ ") + m.filterInput.View() + "\n")
+		} else {
+			dim := " " + filterIconStyle.Render("⌕ ") + filterInactiveStyle.Render(m.filterText)
+			b.WriteString(dim + "\n")
+		}
+	}
+
+	// Compute dynamic column widths
+	cols := m.computeColumnWidths()
+	div := tableColDivStyle.Render("│")
+	headerDiv := tableHeaderDivStyle.Render("│")
+
+	var headerCells []string
+	first := true
+	for i, col := range cols {
+		if col.hidden {
+			continue
+		}
+		title := col.title
+		if i == m.sortColumn {
+			arrow := " ▲"
+			if !m.sortAscending {
+				arrow = " ▼"
+			}
+			maxTitle := col.width - lipgloss.Width(arrow) - 1
+			if maxTitle < 1 {
+				maxTitle = 1
+			}
+			if lipgloss.Width(title) > maxTitle {
+				title = truncateToRunes(title, maxTitle)
+			}
+			title += arrow
+		}
+		cell := tableHeaderStyle.Width(col.width).Render(title)
+		if !first {
+			cell = headerDiv + cell
+		}
+		first = false
+		headerCells = append(headerCells, cell)
+	}
+	headerRow := " " + strings.Join(headerCells, "")
+
+	var sepParts []string
+	first = true
+	for _, c := range cols {
+		if c.hidden {
+			continue
+		}
+		if !first {
+			sepParts = append(sepParts, tableColDivStyle.Render("┼"))
+		}
+		first = false
+		sepParts = append(sepParts, lipgloss.NewStyle().Foreground(dimmed).Render(strings.Repeat("─", c.width)))
+	}
+	sepRow := " " + strings.Join(sepParts, "")
+
+	visible := m.visibleRows()
+	var rows []string
+	if len(m.filteredVMs) == 0 {
+		rows = append(rows, tableEmptyStyle.Render(" No VMs found"))
+	} else {
+		end := min(m.offset+visible, len(m.filteredVMs))
+		for i := m.offset; i < end; i++ {
+			vm := m.filteredVMs[i]
+			selected := i == m.cursor
+			rows = append(rows, m.renderRow(vm, cols, selected, div))
+		}
+	}
+
+	rendered := len(rows)
+	for i := rendered; i < visible; i++ {
+		rows = append(rows, "")
+	}
+
+	tableContent := headerRow + "\n" + sepRow + "\n" + strings.Join(rows, "\n")
+
+	tableWidth := 2
+	visibleCols := 0
+	for _, c := range cols {
+		if !c.hidden {
+			tableWidth += c.width
+			visibleCols++
+		}
+	}
+	if visibleCols > 1 {
+		tableWidth += visibleCols - 1
+	}
+
+	boxWidth := min(tableWidth+4, m.width-2)
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
+	tableBox := tableBorderStyle.Width(boxWidth).Render(tableContent)
+	b.WriteString(tableBox + "\n")
+
+	b.WriteString(m.renderToasts())
+
+	return b.String()
+}
+
 func (m tableModel) visibleRows() int {
 	// title(1) + box_border(2) + header(1) + sep(1) + spacing(1) = 6
 	used := 6
@@ -389,7 +661,7 @@ func (m tableModel) View() string {
 	}
 
 	bgStyle := lipgloss.NewStyle().Background(accent)
-	themeStyle := lipgloss.NewStyle().Foreground(accentLight).Background(accent)
+	themeStyle := lipgloss.NewStyle().Foreground(currentTheme().Highlight).Background(accent)
 
 	// Build left side of title bar that fits within terminal width
 	titleLabel := " ◆ Multipass"
@@ -957,9 +1229,79 @@ func (m tableModel) renderToasts() string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// RenderTitleBar renders the title bar at a given width with optional right-side text.
+func (m tableModel) RenderTitleBar(width int, rightLabel string) string {
+	vmCount := len(m.filteredVMs)
+	totalCount := len(m.vms)
+	countText := fmt.Sprintf(" %d VMs", totalCount)
+	if vmCount != totalCount {
+		countText = fmt.Sprintf(" %d/%d VMs", vmCount, totalCount)
+	}
+	liveIndicator := " ● LIVE"
+
+	w := width
+	if w < 1 {
+		w = 80
+	}
+
+	bgStyle := lipgloss.NewStyle().Background(accent)
+
+	titleLabel := " ◆ Multipass"
+	leftParts := titleBarStyle.Render(titleLabel)
+	leftWidth := lipgloss.Width(leftParts)
+
+	liveWidth := lipgloss.Width(liveIndicator)
+	countWidth := lipgloss.Width(countText)
+
+	showCount := leftWidth+countWidth <= w
+	showLive := showCount && leftWidth+countWidth+liveWidth <= w
+
+	if showCount {
+		leftParts += titleVMCountStyle.Render(countText)
+		leftWidth += countWidth
+	}
+	if showLive {
+		leftParts += titleLiveStyle.Render(liveIndicator)
+		leftWidth += liveWidth
+	}
+
+	// Right-align the label
+	rightPart := ""
+	if rightLabel != "" {
+		rightRendered := lipgloss.NewStyle().
+			Foreground(currentTheme().Highlight).
+			Background(accent).
+			Bold(true).
+			Render(" " + rightLabel + " ")
+		rightWidth := lipgloss.Width(rightRendered)
+		gap := w - leftWidth - rightWidth
+		if gap > 0 {
+			rightPart = bgStyle.Render(strings.Repeat(" ", gap)) + rightRendered
+		}
+	}
+
+	titleText := leftParts + rightPart
+	titleVisibleWidth := lipgloss.Width(titleText)
+	if w > titleVisibleWidth {
+		pad := strings.Repeat(" ", w-titleVisibleWidth)
+		titleText += bgStyle.Render(pad)
+	}
+
+	return titleText
+}
+
+// RenderFooter renders the footer at a given width (exported for root view).
+func (m tableModel) RenderFooter(width int) string {
+	return m.renderFooterAtWidth(width)
+}
+
 func (m tableModel) renderFooter() string {
+	return m.renderFooterAtWidth(m.width)
+}
+
+func (m tableModel) renderFooterAtWidth(w int) string {
 	// Separator line
-	sepWidth := m.width
+	sepWidth := w
 	if sepWidth < 20 {
 		sepWidth = 80
 	}
@@ -982,14 +1324,14 @@ func (m tableModel) renderFooter() string {
 
 	divider := footerSepStyle.Render("  │  ")
 
-	// Responsive footer: adjust based on terminal width
+	// Responsive footer: adjust based on width
 	var footerLines string
-	if m.width >= 100 {
+	if w >= 100 {
 		// Two lines with groups
 		line1 := renderShortcutLine(vmOps) + divider + renderShortcutLine(bulkOps)
 		line2 := renderShortcutLine(navOps) + divider + renderShortcutLine(appOps)
 		footerLines = line1 + "\n" + line2
-	} else if m.width >= 60 {
+	} else if w >= 60 {
 		// Compact: all on separate lines
 		line1 := renderShortcutLine(vmOps)
 		line2 := renderShortcutLine(bulkOps) + divider + renderShortcutLine(navOps)
@@ -1011,7 +1353,7 @@ func (m tableModel) renderFooter() string {
 	}
 
 	var statusContent string
-	if m.width >= 60 {
+	if w >= 60 {
 		statusContent = fmt.Sprintf("  Tab: sort by %s  Shift+Tab: %s",
 			m.columns[m.sortColumn].title, sortDir)
 		if !m.lastRefresh.IsZero() {
@@ -1024,7 +1366,9 @@ func (m tableModel) renderFooter() string {
 	}
 	statusLine := formHintStyle.Render(statusContent)
 
-	return sep + "\n" + footerStyle.Render(footerLines+"\n"+statusLine)
+	centered := lipgloss.NewStyle().Width(w).Align(lipgloss.Center).
+		Render(footerLines + "\n" + statusLine)
+	return sep + "\n" + centered
 }
 
 func renderShortcutLine(shortcuts []struct{ key, desc string }) string {

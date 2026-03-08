@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // appLogger is a file-backed logger shared across the app.
@@ -42,6 +44,7 @@ const (
 	viewMountManage
 	viewMountAdd
 	viewMountModify
+	viewLLMSettings
 )
 
 // ─── Root Model ────────────────────────────────────────────────────────────────
@@ -65,6 +68,12 @@ type rootModel struct {
 	mountManage mountManageModel
 	mountAdd    mountAddModel
 	mountModify mountModifyModel
+	llmSettings llmSettingsModel
+
+	// Chat panel
+	chat      chatModel
+	chatOpen  bool
+	chatFocus bool // true = chat has focus, false = table has focus
 
 	// Pending operation for confirm dialogs
 	pendingCmd tea.Cmd
@@ -77,6 +86,9 @@ type rootModel struct {
 	vmListFetchInFlight     bool
 	vmListFetchPending      bool
 	vmListPendingBackground bool
+
+	// Program reference for p.Send() in agent loop
+	program *tea.Program
 }
 
 // setChildSizes stamps the current terminal dimensions onto every child model.
@@ -108,13 +120,35 @@ func (m *rootModel) setChildSizes() {
 	m.mountAdd.height = m.height
 	m.mountModify.width = m.width
 	m.mountModify.height = m.height
+	m.llmSettings.width = m.width
+	m.llmSettings.height = m.height
+
+	// Chat panel gets 40% width when open
+	if m.chatOpen {
+		chatWidth := m.width * 40 / 100
+		m.chat.setSize(chatWidth, m.height)
+	}
 }
 
 func initialModel() rootModel {
+	chat := newChatModel()
+
+	// Load LLM config
+	cfg, err := loadLLMConfig()
+	if err != nil {
+		if appLogger != nil {
+			appLogger.Printf("failed to load LLM config: %v", err)
+		}
+		cfg = defaultLLMConfig()
+	}
+	chat.config = cfg
+	chat.llmClient = NewLLMClient(cfg)
+
 	return rootModel{
 		currentView: viewLoading,
 		table:       newTableModel(),
 		loading:     newLoadingModel("Loading VMs…"),
+		chat:        chat,
 		// Init schedules fetchVMListCmd immediately.
 		vmListFetchInFlight: true,
 	}
@@ -162,10 +196,18 @@ func (m rootModel) Init() tea.Cmd {
 	)
 }
 
+// programReadyMsg carries the *tea.Program reference.
+type programReadyMsg struct{ program *tea.Program }
+
 // ─── Update ────────────────────────────────────────────────────────────────────
 
 func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case programReadyMsg:
+		m.program = msg.program
+		m.chat.program = msg.program
+		return m, nil
 
 	// ── Window resize ──
 	case tea.WindowSizeMsg:
@@ -224,6 +266,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.table.setVMs(msg.vms)
 			m.table.lastRefresh = time.Now()
+			m.chat.currentVMs = msg.vms // keep chat VM state in sync
 			if !msg.background {
 				m.currentView = viewTable
 			}
@@ -386,6 +429,21 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentView = viewMountModify
 		return m, m.mountModify.Init()
 
+	case llmSettingsSavedMsg:
+		// Update chat model with new config
+		m.chat.config = msg.config
+		m.chat.llmClient = NewLLMClient(msg.config)
+		// Reset MCP state so it re-initializes with new config
+		m.chat.mcpReady = false
+		m.chat.mcpInitFailed = false
+		m.chat.entries = append(m.chat.entries, chatEntry{
+			role:    "system",
+			content: "Settings saved. LLM config updated.",
+		})
+		m.chat.refreshViewport()
+		m.currentView = viewTable
+		return m, nil
+
 	case mountModifySubmitMsg:
 		m.loading = newLoadingModel("Updating mount…")
 		m.setChildSizes()
@@ -396,10 +454,33 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	}
 
+	// ── Chat messages (always route to chat model) ──
+	switch msg.(type) {
+	case chatToolStartMsg, chatToolDoneMsg, chatAgentResultMsg, chatMCPReadyMsg, chatMCPInitDoneMsg, chatMCPDownloadProgressMsg:
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Update(msg)
+		return m, cmd
+	}
+
 	// ── Toast expiry (always route to table regardless of view) ──
 	if expire, ok := msg.(toastExpireMsg); ok {
 		m.table, _ = m.table.Update(expire)
 		return m, nil
+	}
+
+	// ── Forward spinner ticks to chat when thinking ──
+	if m.chatOpen && m.chat.thinking {
+		if _, ok := msg.(spinner.TickMsg); ok {
+			var chatCmd tea.Cmd
+			m.chat, chatCmd = m.chat.Update(msg)
+			// Also forward to table for its spinners
+			if m.currentView == viewTable {
+				var tableCmd tea.Cmd
+				m.table, tableCmd = m.table.Update(msg)
+				return m, tea.Batch(chatCmd, tableCmd)
+			}
+			return m, chatCmd
+		}
 	}
 
 	// ── Delegate to active view for non-key messages ──
@@ -433,6 +514,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.mountModify, cmd = m.mountModify.Update(msg)
 		return m, cmd
+	case viewLLMSettings:
+		var cmd tea.Cmd
+		m.llmSettings, cmd = m.llmSettings.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -441,6 +526,52 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ─── Key Handling ──────────────────────────────────────────────────────────────
 
 func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Global: ? toggles chat panel (except when typing in chat input or filter)
+	if msg.String() == "?" && m.currentView == viewTable && !m.chatFocus && !m.table.filterFocused {
+		m.chatOpen = !m.chatOpen
+		if m.chatOpen {
+			m.chatFocus = true
+			m.chat.Focus()
+			m.chat.currentVMs = m.table.vms // sync current VM state
+			chatWidth := m.width * 40 / 100
+			m.chat.setSize(chatWidth, m.height)
+			// Create default config file if it doesn't exist
+			if path, err := llmConfigPath(); err == nil {
+				if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+					_ = saveLLMConfig(m.chat.config)
+				}
+			}
+		} else {
+			m.chatFocus = false
+			m.chat.Blur()
+		}
+		return m, nil
+	}
+
+	// Tab switches focus between table and chat when chat is open
+	if msg.String() == "tab" && m.chatOpen && m.currentView == viewTable && !m.table.filterFocused {
+		m.chatFocus = !m.chatFocus
+		if m.chatFocus {
+			m.chat.Focus()
+		} else {
+			m.chat.Blur()
+		}
+		return m, nil
+	}
+
+	// When chat has focus, forward keys to chat (except ? to toggle off)
+	if m.chatOpen && m.chatFocus && m.currentView == viewTable {
+		if msg.String() == "esc" {
+			// Esc in chat: unfocus chat, return focus to table
+			m.chatFocus = false
+			m.chat.Blur()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Update(msg)
+		return m, cmd
+	}
+
 	switch m.currentView {
 
 	// ── Main table ──
@@ -453,6 +584,10 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "q", "ctrl+c":
+			// Cleanup MCP on quit
+			if m.chat.mcpClient != nil {
+				m.chat.mcpClient.Close()
+			}
 			return m, tea.Quit
 		case "esc":
 			if m.table.filterVisible {
@@ -460,6 +595,12 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.table.filterInput.SetValue("")
 				m.table.filterVisible = false
 				m.table.applyFilterAndSort()
+				return m, nil
+			}
+			if m.chatOpen {
+				m.chatOpen = false
+				m.chatFocus = false
+				m.chat.Blur()
 				return m, nil
 			}
 			return m, tea.Quit
@@ -600,6 +741,10 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.currentView = viewLoading
 				return m, tea.Batch(m.loading.Init(), fetchSnapshotsCmd(vm.Name))
 			}
+		case "L":
+			m.llmSettings = newLLMSettingsModel(m.chat.config, m.width, m.height)
+			m.currentView = viewLLMSettings
+			return m, m.llmSettings.Init()
 		case "M":
 			if vm, ok := m.table.selectedVM(); ok {
 				if vm.State != "Running" {
@@ -676,6 +821,11 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.mountModify, cmd = m.mountModify.Update(msg)
 		return m, cmd
+
+	case viewLLMSettings:
+		var cmd tea.Cmd
+		m.llmSettings, cmd = m.llmSettings.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -686,6 +836,52 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m rootModel) View() string {
 	switch m.currentView {
 	case viewTable:
+		if m.chatOpen {
+			chatWidth := m.width * 40 / 100
+			tableWidth := m.width - chatWidth
+
+			// 1. Full-width title bar with chat label on the right
+			titleBar := m.table.RenderTitleBar(m.width, m.chat.chatTitleText())
+
+			// 2. Full-width footer
+			footer := m.table.RenderFooter(m.width)
+			footerHeight := lipgloss.Height(footer)
+
+			// 3. Content height = total - title(1) - footer
+			contentHeight := m.height - 1 - footerHeight
+
+			// 4. Table content (no title, no footer)
+			oldWidth := m.table.width
+			oldHeight := m.table.height
+			m.table.width = tableWidth
+			m.table.height = contentHeight + 5 // add footer lines back for visibleRows calc
+			tableContent := m.table.ViewContentOnly()
+			m.table.width = oldWidth
+			m.table.height = oldHeight
+
+			// Force table side to exact content height
+			tableContent = lipgloss.NewStyle().
+				Width(tableWidth).
+				Height(contentHeight).
+				Render(tableContent)
+
+			// 5. Chat content (no outer border, no title)
+			m.chat.setSize(chatWidth, contentHeight)
+			chatContent := m.chat.ViewContent()
+
+			// Add left border to chat as a vertical separator
+			chatContent = lipgloss.NewStyle().
+				Width(chatWidth).
+				Height(contentHeight).
+				BorderLeft(true).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(currentTheme().Subtle).
+				Render(chatContent)
+
+			// 6. Compose: title + (table | chat) + footer
+			midRow := lipgloss.JoinHorizontal(lipgloss.Top, tableContent, chatContent)
+			return titleBar + "\n" + midRow + "\n" + footer
+		}
 		return m.table.View()
 	case viewHelp:
 		return m.help.View()
@@ -711,6 +907,8 @@ func (m rootModel) View() string {
 		return m.mountAdd.View()
 	case viewMountModify:
 		return m.mountModify.View()
+	case viewLLMSettings:
+		return m.llmSettings.View()
 	default:
 		return "Unknown view"
 	}
@@ -911,8 +1109,22 @@ func main() {
 		appLogger.Println("passgo starting up")
 	}
 
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	model := initialModel()
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+
+	// Store program reference for p.Send() in agent loop.
+	// This is set via the programReadyMsg on first tick.
+	go func() {
+		// Small delay to ensure program is running before sending
+		p.Send(programReadyMsg{program: p})
+	}()
+
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error running program: %v", err)
+	}
+
+	// Cleanup MCP subprocess
+	if model.chat.mcpClient != nil {
+		model.chat.mcpClient.Close()
 	}
 }
