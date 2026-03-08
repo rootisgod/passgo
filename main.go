@@ -836,23 +836,53 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m rootModel) View() string {
 	switch m.currentView {
 	case viewTable:
-		tableView := m.table.View()
 		if m.chatOpen {
 			chatWidth := m.width * 40 / 100
 			tableWidth := m.width - chatWidth
 
-			// Temporarily adjust table width for rendering
+			// 1. Full-width title bar with chat label on the right
+			titleBar := m.table.RenderTitleBar(m.width, m.chat.chatTitleText())
+
+			// 2. Full-width footer
+			footer := m.table.RenderFooter(m.width)
+			footerHeight := lipgloss.Height(footer)
+
+			// 3. Content height = total - title(1) - footer
+			contentHeight := m.height - 1 - footerHeight
+
+			// 4. Table content (no title, no footer)
 			oldWidth := m.table.width
+			oldHeight := m.table.height
 			m.table.width = tableWidth
-			tableView = m.table.View()
+			m.table.height = contentHeight + 5 // add footer lines back for visibleRows calc
+			tableContent := m.table.ViewContentOnly()
 			m.table.width = oldWidth
+			m.table.height = oldHeight
 
-			m.chat.setSize(chatWidth, m.height)
-			chatView := m.chat.View()
+			// Force table side to exact content height
+			tableContent = lipgloss.NewStyle().
+				Width(tableWidth).
+				Height(contentHeight).
+				Render(tableContent)
 
-			return lipgloss.JoinHorizontal(lipgloss.Top, tableView, chatView)
+			// 5. Chat content (no outer border, no title)
+			m.chat.setSize(chatWidth, contentHeight)
+			chatContent := m.chat.ViewContent()
+
+			// Add left border to chat as a vertical separator
+			chatContent = lipgloss.NewStyle().
+				Width(chatWidth).
+				Height(contentHeight).
+				BorderLeft(true).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(currentTheme().Subtle).
+				Render(chatContent)
+
+			// 6. Compose: title + (table | chat) + footer
+			midRow := lipgloss.JoinHorizontal(lipgloss.Top, tableContent, chatContent)
+			return titleBar + "\n" + midRow + "\n" + footer
 		}
-		return tableView
+		return m.table.View()
 	case viewHelp:
 		return m.help.View()
 	case viewVersion:

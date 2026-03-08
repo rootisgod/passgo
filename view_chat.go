@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,7 +30,7 @@ type chatModel struct {
 	messages []ChatMessage // conversation history for LLM
 
 	// Input
-	input textinput.Model
+	input textarea.Model
 
 	// Viewport for scrolling messages
 	viewport viewport.Model
@@ -56,9 +56,15 @@ type chatModel struct {
 }
 
 func newChatModel() chatModel {
-	ti := textinput.New()
+	ti := textarea.New()
 	ti.Placeholder = "Ask about VMs..."
 	ti.CharLimit = 500
+	ti.ShowLineNumbers = false
+	ti.Prompt = ""
+	ti.EndOfBufferCharacter = ' '
+	ti.SetHeight(3)
+	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -70,7 +76,7 @@ func newChatModel() chatModel {
 		spinner:  sp,
 		viewport: vp,
 		entries: []chatEntry{
-			{role: "system", content: "Press Enter to send a message. Press ? or Tab to switch focus."},
+			{role: "system", content: "Enter to send, Alt+Enter for newline. ? or Tab to switch focus."},
 		},
 		messages: []ChatMessage{
 			{Role: "system", Content: LLMSystemPrompt},
@@ -79,7 +85,7 @@ func newChatModel() chatModel {
 }
 
 func (m chatModel) Init() tea.Cmd {
-	return textinput.Blink
+	return textarea.Blink
 }
 
 func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
@@ -92,6 +98,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 
 		switch msg.String() {
 		case "enter":
+			// Enter sends the message; alt+enter / shift+enter add newlines
 			text := strings.TrimSpace(m.input.Value())
 			if text == "" || m.thinking {
 				return m, nil
@@ -110,7 +117,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			// Add user message
 			m.entries = append(m.entries, chatEntry{role: "user", content: text})
 			m.messages = append(m.messages, ChatMessage{Role: "user", Content: text})
-			m.input.SetValue("")
+			m.input.Reset()
+			m.input.SetHeight(3)
+			m.recalcLayout()
 			m.thinking = true
 			m.refreshViewport()
 
@@ -130,9 +139,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 
-		// Forward to text input
+		// Forward to textarea
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+
+		// Resize textarea height to fit content
+		m.resizeInputToContent()
+
 		return m, cmd
 
 	case chatToolStartMsg:
@@ -243,7 +256,7 @@ func (m chatModel) renderEntries() string {
 	t := currentTheme()
 	var lines []string
 
-	contentWidth := m.width - 6 // border + padding
+	contentWidth := m.width - 4 // padding
 	if contentWidth < 10 {
 		contentWidth = 10
 	}
@@ -280,6 +293,47 @@ func (m chatModel) renderEntries() string {
 	return strings.Join(lines, "\n")
 }
 
+// chatTitleText returns the current title string for the chat panel.
+func (m chatModel) chatTitleText() string {
+	if m.thinking {
+		return m.spinner.View() + " Thinking..."
+	}
+	if m.mcpReady {
+		return "AI Chat (MCP)"
+	}
+	return "AI Chat"
+}
+
+// ViewContent renders the chat content area (viewport + input) without title or outer border.
+// Used by the root View for the unified split layout.
+func (m chatModel) ViewContent() string {
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
+
+	t := currentTheme()
+
+	// Viewport content
+	vpContent := m.viewport.View()
+
+	// Input with a visible border box
+	inputWidth := m.width - 4 // padding for input border
+	if inputWidth < 10 {
+		inputWidth = 10
+	}
+	inputBorderColor := t.Subtle
+	if m.focused {
+		inputBorderColor = t.Accent
+	}
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(inputBorderColor).
+		Width(inputWidth)
+	inputBox := inputStyle.Render(m.input.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left, vpContent, inputBox)
+}
+
 func (m chatModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -287,30 +341,29 @@ func (m chatModel) View() string {
 
 	t := currentTheme()
 
+	borderColor := t.Subtle
+	if m.focused {
+		borderColor = t.Accent
+	}
+
 	// Title bar
-	titleWidth := m.width - 4 // inside border
+	titleWidth := m.width - 2
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(t.AccentLight).
+		Foreground(t.Highlight).
 		Background(t.Accent).
 		Padding(0, 1).
 		Width(titleWidth)
 
-	titleText := "AI Chat"
-	if m.thinking {
-		titleText = m.spinner.View() + " Thinking..."
-	} else if m.mcpReady {
-		titleText = "AI Chat (MCP connected)"
-	}
-	title := titleStyle.Render(titleText)
+	title := titleStyle.Render(m.chatTitleText())
 
 	// Viewport content
 	vpContent := m.viewport.View()
 
-	// Input
+	// Input with a visible border box
 	inputWidth := m.width - 6
 	if inputWidth < 10 {
 		inputWidth = 10
@@ -325,17 +378,8 @@ func (m chatModel) View() string {
 		Width(inputWidth)
 	inputBox := inputStyle.Render(m.input.View())
 
-	// Compose inside border
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		vpContent,
-		inputBox,
-	)
+	content := lipgloss.JoinVertical(lipgloss.Left, title, vpContent, inputBox)
 
-	borderColor := t.Subtle
-	if m.focused {
-		borderColor = t.Accent
-	}
 	border := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
@@ -350,21 +394,70 @@ func (m *chatModel) setSize(width, height int) {
 	m.width = width
 	m.height = height
 
-	// Viewport: total height minus title(1) + input border(3) + outer border(2)
-	vpHeight := height - 8
+	inputWidth := width - 6 // padding for input border
+	if inputWidth < 10 {
+		inputWidth = 10
+	}
+	m.input.SetWidth(inputWidth)
+
+	m.recalcLayout()
+	m.refreshViewport()
+}
+
+// resizeInputToContent adjusts textarea height based on content including soft-wrapped lines.
+func (m *chatModel) resizeInputToContent() {
+	const minInputHeight = 3
+
+	// Calculate visual lines: each hard line may wrap across multiple visual lines
+	inputWidth := m.input.Width()
+	if inputWidth < 1 {
+		inputWidth = 1
+	}
+	val := m.input.Value()
+	visualLines := 0
+	if val == "" {
+		visualLines = 1
+	} else {
+		for _, line := range strings.Split(val, "\n") {
+			lineLen := len([]rune(line))
+			if lineLen == 0 {
+				visualLines++
+			} else {
+				visualLines += (lineLen + inputWidth - 1) / inputWidth
+			}
+		}
+	}
+
+	maxInputHeight := m.height / 3
+	if maxInputHeight < minInputHeight {
+		maxInputHeight = minInputHeight
+	}
+
+	h := visualLines
+	if h < minInputHeight {
+		h = minInputHeight
+	}
+	if h > maxInputHeight {
+		h = maxInputHeight
+	}
+	m.input.SetHeight(h)
+	m.recalcLayout()
+}
+
+// recalcLayout adjusts viewport height based on current input height.
+func (m *chatModel) recalcLayout() {
+	// input textarea lines + input border box(2)
+	inputHeight := m.input.Height() + 2 // textarea content + rounded border
+	vpHeight := m.height - inputHeight
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
-	vpWidth := width - 4 // inside outer border
+	vpWidth := m.width - 4
 	if vpWidth < 10 {
 		vpWidth = 10
 	}
-
 	m.viewport.Width = vpWidth
 	m.viewport.Height = vpHeight
-	m.input.Width = width - 8
-
-	m.refreshViewport()
 }
 
 // Focus/blur management

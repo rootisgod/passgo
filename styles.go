@@ -128,12 +128,12 @@ func rebuildStyles() {
 	// ── Title ──
 	titleBarStyle = lipgloss.NewStyle().
 		Bold(true).
-		Foreground(accentLight).
+		Foreground(t.Highlight).
 		Background(accent).
 		Padding(0, 1)
 
 	titleVMCountStyle = lipgloss.NewStyle().
-		Foreground(accentLight).
+		Foreground(t.Highlight).
 		Background(accent)
 
 	titleLiveStyle = lipgloss.NewStyle().
