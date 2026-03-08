@@ -65,6 +65,14 @@ flowchart TB
 | version.go | GetVersion() for build info |
 | vm_operations.go | (Stub; VM logic in multipass.go and messages.go) |
 | snapshot_operations.go | (Stub; snapshot logic in multipass.go and messages.go) |
+| llm.go | OpenAI-compatible LLM client (ChatMessage, ToolCall, ToolDef types) |
+| agent.go | ReAct agent loop: LLM ↔ MCP tool execution with live p.Send() streaming |
+| mcp_client.go | MCP client: spawns multipass-mcp subprocess, JSON-RPC over stdio |
+| mcp_install.go | Auto-detect/download multipass-mcp binary from GitHub releases |
+| view_chat.go | Chat panel (split view alongside table), viewport + text input |
+| view_llm_settings.go | LLM settings form (base-url, api-key, model) |
+| chat_messages.go | Chat-specific tea.Msg types (tool start/done, agent result, MCP ready) |
+| config_llm.go | Config loading/saving for ~/.passgo/llm.conf |
 
 ## Message Flow
 
@@ -84,6 +92,12 @@ All messages are handled in `main.go`'s `Update()`. Who produces them:
 | mountAddRequestMsg | view_mounts (mountManageModel) | main.Update |
 | mountModifyRequestMsg | view_mounts (mountManageModel) | main.Update |
 | mountModifySubmitMsg | view_mounts (mountModifyModel) | main.Update |
+| chatToolStartMsg | agent.go (p.Send during tool exec) | main.Update → chatModel |
+| chatToolDoneMsg | agent.go (p.Send after tool exec) | main.Update → chatModel |
+| chatAgentResultMsg | agent goroutine (final response) | main.Update → chatModel |
+| chatMCPReadyMsg | initMCPAndRunCmd goroutine | main.Update → chatModel |
+| chatMCPInitDoneMsg | initMCPAndRunCmd goroutine | main.Update → chatModel |
+| llmSettingsSavedMsg | llmSettingsModel save | main.Update |
 | toastExpireMsg | tableModel (toast timer) | main.Update (always routes to table) |
 | autoRefreshTickMsg | autoRefreshTickCmd (tea.Tick) | main.Update |
 | infoRefreshTickMsg | infoRefreshTickCmd (tea.Tick) | main.Update (when on viewInfo) |
@@ -94,7 +108,7 @@ All messages are handled in `main.go`'s `Update()`. Who produces them:
 
 | viewState | Model | Keys | Notes |
 |-----------|-------|------|-------|
-| viewTable | tableModel | All shortcuts (h, c, C, [, ], p, d, r, s, n, m, M, etc.) | Main VM list |
+| viewTable | tableModel | All shortcuts (h, c, C, [, ], p, d, r, s, n, m, M, ?, L, etc.) | Main VM list |
 | viewHelp | helpModel | esc, enter, q | Read-only |
 | viewVersion | versionModel | esc, enter, q | Read-only |
 | viewInfo | infoModel | esc, i (refresh) | VM detail, live charts |
@@ -107,6 +121,7 @@ All messages are handled in `main.go`'s `Update()`. Who produces them:
 | viewMountManage | mountManageModel | a (add), e (modify), d (remove), Esc | Mount list |
 | viewMountAdd | mountAddModel | Form navigation | Add mount |
 | viewMountModify | mountModifyModel | Form navigation | Modify mount |
+| viewLLMSettings | llmSettingsModel | Form navigation | Edit LLM config |
 
 ## Key Conventions
 
@@ -114,3 +129,35 @@ All messages are handled in `main.go`'s `Update()`. Who produces them:
 - **Child models**: Receive width/height; call `setChildSizes()` when creating or on WindowSizeMsg.
 - **Inline ops**: Set `busyVMs[name]` before cmd; clear on `vmOperationResultMsg`. User stays on table.
 - **Context return**: `lastMountVM` and `lastSnapVM` track where to return after mount/snapshot ops complete.
+
+## LLM Chat Integration
+
+Split-view chat panel (? to toggle, Tab to switch focus, L for settings).
+
+```
+Table (60%) │ Chat Panel (40%)
+             │ viewport (scrollable messages)
+             │ text input
+             │
+             │ Agent Loop → LLM API (OpenAI-compatible)
+             │     ↕
+             │ MCP Client ──stdio──→ multipass-mcp binary
+```
+
+**Key design decisions:**
+- **No `list_instances` tool** in multipass-mcp — the system prompt injects current VM state from PassGo's table so the LLM answers informational questions without tool calls
+- **Single OpenAI-compatible client** — works with any endpoint (OpenRouter, Ollama, OpenAI, LiteLLM) via base-url swap
+- **No interface abstraction** — just `LLMClient` struct with configurable base URL
+- **Split view via `chatOpen bool`** — not a new viewState, just conditional `JoinHorizontal` in View()
+- **Goroutine safety** — agent goroutines capture values upfront, communicate state back via messages only, never mutate model fields directly
+- **MCP binary auto-download** — GitHub releases are .tar.gz/.zip archives that must be extracted (not raw binaries)
+- **Config**: `~/.passgo/llm.conf` with 4 fields: base-url, api-key, model, mcp-binary
+
+**Guardrails:**
+- Tool name whitelisting against MCP tool list
+- Context cancellation checked between iterations
+- Conversation history capped at 50 messages (sliding window)
+- LLM response body limited to 10MB
+- MCP calls timeout after 60s, init after 15s
+- MCP subprocess force-killed after 5s on Close()
+- Chat entries capped at 200
