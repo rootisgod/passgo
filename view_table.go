@@ -380,7 +380,9 @@ func (m tableModel) ViewContentOnly() string {
 			if !m.sortAscending {
 				arrow = " ▼"
 			}
-			maxTitle := col.width - lipgloss.Width(arrow) - 1
+			// Content area = col.width - 1 (PaddingRight). Title+arrow must fit.
+			// truncateToRunes adds "…" (1 char), so maxRunes needs -1 extra.
+			maxTitle := col.width - lipgloss.Width(arrow) - 1 - 1
 			if maxTitle < 1 {
 				maxTitle = 1
 			}
@@ -388,6 +390,19 @@ func (m tableModel) ViewContentOnly() string {
 				title = truncateToRunes(title, maxTitle)
 			}
 			title += arrow
+		}
+		// Truncate to fit content area (col.width - 1 for PaddingRight).
+		// truncateToRunes appends "…" so allow room for it: maxRunes = contentArea - 1.
+		contentArea := col.width - 1
+		if contentArea < 1 {
+			contentArea = 1
+		}
+		if lipgloss.Width(title) > contentArea {
+			if contentArea <= 1 {
+				title = title[:0]
+			} else {
+				title = truncateToRunes(title, contentArea-1)
+			}
 		}
 		cell := tableHeaderStyle.Width(col.width).Render(title)
 		if !first {
@@ -432,24 +447,7 @@ func (m tableModel) ViewContentOnly() string {
 
 	tableContent := headerRow + "\n" + sepRow + "\n" + strings.Join(rows, "\n")
 
-	tableWidth := 2
-	visibleCols := 0
-	for _, c := range cols {
-		if !c.hidden {
-			tableWidth += c.width
-			visibleCols++
-		}
-	}
-	if visibleCols > 1 {
-		tableWidth += visibleCols - 1
-	}
-
-	boxWidth := min(tableWidth+4, m.width-2)
-	if boxWidth < 30 {
-		boxWidth = 30
-	}
-	tableBox := tableBorderStyle.Width(boxWidth).Render(tableContent)
-	b.WriteString(tableBox)
+	b.WriteString(tableContent)
 
 	toasts := m.renderToasts()
 	if toasts != "" {
@@ -545,7 +543,9 @@ func (m tableModel) ViewWithoutFooter() string {
 			if !m.sortAscending {
 				arrow = " ▼"
 			}
-			maxTitle := col.width - lipgloss.Width(arrow) - 1
+			// Content area = col.width - 1 (PaddingRight). Title+arrow must fit.
+			// truncateToRunes adds "…" (1 char), so maxRunes needs -1 extra.
+			maxTitle := col.width - lipgloss.Width(arrow) - 1 - 1
 			if maxTitle < 1 {
 				maxTitle = 1
 			}
@@ -553,6 +553,19 @@ func (m tableModel) ViewWithoutFooter() string {
 				title = truncateToRunes(title, maxTitle)
 			}
 			title += arrow
+		}
+		// Truncate to fit content area (col.width - 1 for PaddingRight).
+		// truncateToRunes appends "…" so allow room for it: maxRunes = contentArea - 1.
+		contentArea := col.width - 1
+		if contentArea < 1 {
+			contentArea = 1
+		}
+		if lipgloss.Width(title) > contentArea {
+			if contentArea <= 1 {
+				title = title[:0]
+			} else {
+				title = truncateToRunes(title, contentArea-1)
+			}
 		}
 		cell := tableHeaderStyle.Width(col.width).Render(title)
 		if !first {
@@ -609,7 +622,7 @@ func (m tableModel) ViewWithoutFooter() string {
 		tableWidth += visibleCols - 1
 	}
 
-	boxWidth := min(tableWidth+4, m.width-2)
+	boxWidth := m.width - 2
 	if boxWidth < 30 {
 		boxWidth = 30
 	}
@@ -803,7 +816,7 @@ func (m tableModel) View() string {
 		tableWidth += visibleCols - 1 // divider characters
 	}
 
-	boxWidth := min(tableWidth+4, m.width-2)
+	boxWidth := m.width - 2
 	if boxWidth < 30 {
 		boxWidth = 30
 	}
@@ -823,8 +836,12 @@ func (m tableModel) computeColumnWidths() []tableColumn {
 	cols := make([]tableColumn, len(m.columns))
 	copy(cols, m.columns)
 
-	// Available width: terminal minus border(2) + prefix(1) + padding
-	avail := m.width - 5
+	// Available width for the header row content, inside the table box.
+	// Box content width is m.width - 2 (lipgloss Width excludes border).
+	avail := m.width - 2
+	if avail < 20 {
+		avail = 20
+	}
 
 	// Reset hidden state
 	for i := range cols {
@@ -842,22 +859,33 @@ func (m tableModel) computeColumnWidths() []tableColumn {
 	if nameWidth < cols[0].minWidth {
 		nameWidth = cols[0].minWidth
 	}
+	// Cap Name column to at most 40% of available width
+	nameMax := avail * 40 / 100
+	if nameMax < cols[0].minWidth {
+		nameMax = cols[0].minWidth
+	}
+	if nameWidth > nameMax {
+		nameWidth = nameMax
+	}
 	cols[0].width = nameWidth
 
-	// Calculate total width at preferred sizes
+	// Calculate total rendered width of the header row.
+	// Each cell rendered with Width(col.width) is exactly col.width chars
+	// (lipgloss Width includes padding). Between cells: 1 divider char.
+	// Leading prefix: 1 space.
 	totalWidth := func() int {
-		w := 0
-		dividers := 0
+		w := 1 // leading " " prefix
+		visible := 0
 		for _, c := range cols {
 			if !c.hidden {
 				w += c.width
-				dividers++
+				visible++
 			}
 		}
-		if dividers > 0 {
-			dividers-- // n-1 dividers
+		if visible > 1 {
+			w += visible - 1 // divider characters between cells
 		}
-		return w + dividers
+		return w
 	}
 
 	// Phase 1: Shrink columns to their minimum widths (lowest priority first)
@@ -891,22 +919,48 @@ func (m tableModel) computeColumnWidths() []tableColumn {
 		}
 	}
 
-	// Phase 3: If wider than needed, distribute extra to resource columns and IPv4
-	extra := avail - totalWidth()
-	if extra > 0 && !cols[3].hidden {
-		add := min(extra, 6) // IPv4
-		cols[3].width += add
-		extra -= add
+	// Phase 3: If still overflowing after hiding, shrink remaining visible columns
+	// proportionally down to their minWidth
+	if totalWidth() > avail {
+		for totalWidth() > avail {
+			shrunk := false
+			for i := range cols {
+				if cols[i].hidden || cols[i].width <= cols[i].minWidth {
+					continue
+				}
+				cols[i].width--
+				shrunk = true
+				if totalWidth() <= avail {
+					break
+				}
+			}
+			if !shrunk {
+				break
+			}
+		}
 	}
-	// Spread remaining to CPU, Disk, Memory evenly
-	for _, idx := range []int{4, 5, 6} {
+
+	// Phase 4: Distribute all remaining extra space evenly across visible columns
+	// so that columns fill the full box width and headers never wrap.
+	for {
+		extra := avail - totalWidth()
 		if extra <= 0 {
 			break
 		}
-		if idx < len(cols) && !cols[idx].hidden {
-			add := min(extra, 4)
-			cols[idx].width += add
-			extra -= add
+		distributed := false
+		for i := range cols {
+			if cols[i].hidden {
+				continue
+			}
+			cols[i].width++
+			extra--
+			distributed = true
+			if extra <= 0 {
+				break
+			}
+		}
+		if !distributed {
+			break
 		}
 	}
 
@@ -1319,24 +1373,34 @@ func (m tableModel) renderFooterAtWidth(w int) string {
 		{"i", "Info"}, {"s", "Shell"}, {"n", "Snap"}, {"m", "Snaps"}, {"M", "Mount"},
 	}
 	appOps := []struct{ key, desc string }{
-		{"f", "Filter"}, {"/", "Refresh"}, {"1-0", "Theme"}, {"h", "Help"}, {"q", "Quit"},
+		{"f", "Filter"}, {"/", "Refresh"}, {"1-0", "Theme"}, {"L", "LLM Settings"}, {"h", "Help"}, {"q", "Quit"},
 	}
 
 	divider := footerSepStyle.Render("  │  ")
 
-	// Responsive footer: adjust based on width
+	// Responsive footer: try fewest lines first, fall back if lines would overflow.
 	var footerLines string
-	if w >= 100 {
-		// Two lines with groups
+	if w >= 60 {
+		// Try 2 lines first
 		line1 := renderShortcutLine(vmOps) + divider + renderShortcutLine(bulkOps)
 		line2 := renderShortcutLine(navOps) + divider + renderShortcutLine(appOps)
-		footerLines = line1 + "\n" + line2
-	} else if w >= 60 {
-		// Compact: all on separate lines
-		line1 := renderShortcutLine(vmOps)
-		line2 := renderShortcutLine(bulkOps) + divider + renderShortcutLine(navOps)
-		line3 := renderShortcutLine(appOps)
-		footerLines = line1 + "\n" + line2 + "\n" + line3
+		if lipgloss.Width(line1) <= w && lipgloss.Width(line2) <= w {
+			footerLines = line1 + "\n" + line2
+		} else {
+			// Fall back to 3 lines
+			l1 := renderShortcutLine(vmOps)
+			l2 := renderShortcutLine(bulkOps) + divider + renderShortcutLine(navOps)
+			l3 := renderShortcutLine(appOps)
+			if lipgloss.Width(l2) > w {
+				// Even 3-line layout overflows, split further
+				l2 = renderShortcutLine(bulkOps)
+				l3 = renderShortcutLine(navOps)
+				l4 := renderShortcutLine(appOps)
+				footerLines = l1 + "\n" + l2 + "\n" + l3 + "\n" + l4
+			} else {
+				footerLines = l1 + "\n" + l2 + "\n" + l3
+			}
+		}
 	} else {
 		// Very narrow: minimal shortcuts
 		essentials := []struct{ key, desc string }{
