@@ -71,9 +71,11 @@ type rootModel struct {
 	llmSettings llmSettingsModel
 
 	// Chat panel
-	chat      chatModel
-	chatOpen  bool
-	chatFocus bool // true = chat has focus, false = table has focus
+	chat             chatModel
+	chatOpen         bool
+	chatFocus        bool // true = chat has focus, false = table has focus
+	chatWidthPercent int  // 10-90, percentage of terminal width for chat panel
+	draggingSplit    bool // true while user is mouse-dragging the split divider
 
 	// Pending operation for confirm dialogs
 	pendingCmd tea.Cmd
@@ -123,9 +125,9 @@ func (m *rootModel) setChildSizes() {
 	m.llmSettings.width = m.width
 	m.llmSettings.height = m.height
 
-	// Chat panel gets 40% width when open
+	// Chat panel gets dynamic width when open
 	if m.chatOpen {
-		chatWidth := m.width * 40 / 100
+		chatWidth := m.width * m.chatWidthPercent / 100
 		m.chat.setSize(chatWidth, m.height)
 	}
 }
@@ -145,10 +147,11 @@ func initialModel() rootModel {
 	chat.llmClient = NewLLMClient(cfg)
 
 	return rootModel{
-		currentView: viewLoading,
-		table:       newTableModel(),
-		loading:     newLoadingModel("Loading VMs…"),
-		chat:        chat,
+		currentView:      viewLoading,
+		table:            newTableModel(),
+		loading:          newLoadingModel("Loading VMs…"),
+		chat:             chat,
+		chatWidthPercent: 40,
 		// Init schedules fetchVMListCmd immediately.
 		vmListFetchInFlight: true,
 	}
@@ -187,6 +190,12 @@ func (m *rootModel) dequeuePendingVMListFetch() tea.Cmd {
 	return m.requestVMListFetch(background)
 }
 
+// chatSplitX returns the X column where the split divider sits when chat is open.
+func (m *rootModel) chatSplitX() int {
+	chatWidth := m.width * m.chatWidthPercent / 100
+	return m.width - chatWidth
+}
+
 func (m rootModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.loading.Init(),
@@ -222,6 +231,73 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Mouse messages ──
 	case tea.MouseMsg:
+		// Handle split-pane interactions when chat is open on table view
+		if m.currentView == viewTable && m.chatOpen {
+			splitX := m.chatSplitX()
+
+			// If currently dragging, handle motion/continued press/release first
+			if m.draggingSplit {
+				switch msg.Type {
+				case tea.MouseMotion, tea.MouseLeft:
+					// Update split position from drag
+					newChatWidth := m.width - msg.X
+					pct := newChatWidth * 100 / m.width
+					if pct < 15 {
+						pct = 15
+					}
+					if pct > 75 {
+						pct = 75
+					}
+					m.chatWidthPercent = pct
+					m.setChildSizes()
+					return m, nil
+				case tea.MouseRelease:
+					m.draggingSplit = false
+					return m, nil
+				}
+			}
+
+			switch msg.Type {
+			case tea.MouseLeft:
+				// Check if clicking on or near the divider (±1 col) to start drag
+				if msg.X >= splitX-1 && msg.X <= splitX+1 {
+					m.draggingSplit = true
+					return m, nil
+				}
+				// Click left of divider → focus table
+				if msg.X < splitX {
+					if m.chatFocus {
+						m.chatFocus = false
+						m.chat.Blur()
+					}
+					var cmd tea.Cmd
+					m.table, cmd = m.table.Update(msg)
+					return m, cmd
+				}
+				// Click right of divider → focus chat
+				if !m.chatFocus {
+					m.chatFocus = true
+					m.chat.Focus()
+				}
+				var cmd tea.Cmd
+				m.chat, cmd = m.chat.Update(msg)
+				return m, cmd
+
+			case tea.MouseRelease:
+				// Forward release to focused panel
+			}
+
+			// Forward wheel/other mouse events to the focused panel
+			if m.chatFocus {
+				var cmd tea.Cmd
+				m.chat, cmd = m.chat.Update(msg)
+				return m, cmd
+			}
+			var cmd tea.Cmd
+			m.table, cmd = m.table.Update(msg)
+			return m, cmd
+		}
+
 		if m.currentView == viewTable {
 			var cmd tea.Cmd
 			m.table, cmd = m.table.Update(msg)
@@ -533,7 +609,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.chatFocus = true
 			m.chat.Focus()
 			m.chat.currentVMs = m.table.vms // sync current VM state
-			chatWidth := m.width * 40 / 100
+			chatWidth := m.width * m.chatWidthPercent / 100
 			m.chat.setSize(chatWidth, m.height)
 			// Create default config file if it doesn't exist
 			if path, err := llmConfigPath(); err == nil {
@@ -837,8 +913,9 @@ func (m rootModel) View() string {
 	switch m.currentView {
 	case viewTable:
 		if m.chatOpen {
-			chatWidth := m.width * 40 / 100
-			tableWidth := m.width - chatWidth
+			chatWidth := m.width * m.chatWidthPercent / 100
+			dividerWidth := 1
+			tableWidth := m.width - chatWidth - dividerWidth
 
 			// 1. Full-width title bar with chat label on the right
 			titleBar := m.table.RenderTitleBar(m.width, m.chat.chatTitleText())
@@ -850,36 +927,41 @@ func (m rootModel) View() string {
 			// 3. Content height = total - title(1) - footer
 			contentHeight := m.height - 1 - footerHeight
 
-			// 4. Table content (no title, no footer)
+			// 4. Table content (borderless in split view)
 			oldWidth := m.table.width
 			oldHeight := m.table.height
-			m.table.width = tableWidth
+			// +2 compensates for computeColumnWidths subtracting 2 for borders
+			m.table.width = tableWidth + 2
 			m.table.height = contentHeight + 5 // add footer lines back for visibleRows calc
 			tableContent := m.table.ViewContentOnly()
 			m.table.width = oldWidth
 			m.table.height = oldHeight
 
-			// Force table side to exact content height
+			// Force table side to exact dimensions
 			tableContent = lipgloss.NewStyle().
 				Width(tableWidth).
 				Height(contentHeight).
 				Render(tableContent)
 
-			// 5. Chat content (no outer border, no title)
+			// 5. Vertical divider between table and chat
+			divLine := lipgloss.NewStyle().Foreground(currentTheme().Subtle).Render("│")
+			var divLines []string
+			for i := 0; i < contentHeight; i++ {
+				divLines = append(divLines, divLine)
+			}
+			divider := strings.Join(divLines, "\n")
+
+			// 6. Chat content (no border alignment needed — table has no border)
 			m.chat.setSize(chatWidth, contentHeight)
 			chatContent := m.chat.ViewContent()
 
-			// Add left border to chat as a vertical separator
 			chatContent = lipgloss.NewStyle().
 				Width(chatWidth).
 				Height(contentHeight).
-				BorderLeft(true).
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(currentTheme().Subtle).
 				Render(chatContent)
 
-			// 6. Compose: title + (table | chat) + footer
-			midRow := lipgloss.JoinHorizontal(lipgloss.Top, tableContent, chatContent)
+			// 7. Compose: title + (table | divider | chat) + footer
+			midRow := lipgloss.JoinHorizontal(lipgloss.Top, tableContent, divider, chatContent)
 			return titleBar + "\n" + midRow + "\n" + footer
 		}
 		return m.table.View()
