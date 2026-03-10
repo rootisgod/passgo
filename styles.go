@@ -43,10 +43,12 @@ var (
 // ─── Footer ────────────────────────────────────────────────────────────────────
 
 var (
-	footerKeyStyle  lipgloss.Style
-	footerDescStyle lipgloss.Style
-	footerStyle     lipgloss.Style
-	footerSepStyle  lipgloss.Style
+	footerKeyStyle     lipgloss.Style
+	footerDescStyle    lipgloss.Style
+	footerKeyDimStyle  lipgloss.Style
+	footerDescDimStyle lipgloss.Style
+	footerStyle        lipgloss.Style
+	footerSepStyle     lipgloss.Style
 )
 
 // ─── Filter ────────────────────────────────────────────────────────────────────
@@ -182,6 +184,12 @@ func rebuildStyles() {
 
 	footerDescStyle = lipgloss.NewStyle().
 		Foreground(subtle)
+
+	footerKeyDimStyle = lipgloss.NewStyle().
+		Foreground(dimmed)
+
+	footerDescDimStyle = lipgloss.NewStyle().
+		Foreground(dimmed)
 
 	footerStyle = lipgloss.NewStyle().
 		PaddingLeft(1)

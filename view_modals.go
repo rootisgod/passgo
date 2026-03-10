@@ -12,12 +12,13 @@ import (
 // ─── Help Modal ────────────────────────────────────────────────────────────────
 
 type helpModel struct {
-	width  int
-	height int
+	width   int
+	height  int
+	vmState string
 }
 
-func newHelpModel() helpModel {
-	return helpModel{}
+func newHelpModel(vmState string) helpModel {
+	return helpModel{vmState: vmState}
 }
 
 func (m helpModel) View() string {
@@ -51,9 +52,15 @@ func (m helpModel) View() string {
 
 	var lines []string
 	for _, s := range shortcuts {
+		keyStyle := footerKeyStyle
+		descStyle := modalTextStyle
+		if !vmShortcutEnabled(s.key, m.vmState) {
+			keyStyle = footerKeyDimStyle
+			descStyle = lipgloss.NewStyle().Foreground(dimmed)
+		}
 		lines = append(lines, fmt.Sprintf("  %s  %s",
-			footerKeyStyle.Width(4).Render(s.key),
-			modalTextStyle.Render(s.desc)))
+			keyStyle.Width(4).Render(s.key),
+			descStyle.Render(s.desc)))
 	}
 
 	// Theme list

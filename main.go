@@ -681,7 +681,11 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "h":
-			m.help = newHelpModel()
+			var helpVMState string
+			if vm, ok := m.table.selectedVM(); ok {
+				helpVMState = vm.State
+			}
+			m.help = newHelpModel(helpVMState)
 			m.setChildSizes()
 			m.currentView = viewHelp
 			return m, nil
@@ -691,7 +695,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentView = viewVersion
 			return m, nil
 		case "i":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("i", vm.State) {
 				m.info = newInfoModel(vm.Name, m.width, m.height)
 				m.currentView = viewInfo
 				return m, tea.Batch(fetchVMInfoCmd(vm.Name), infoRefreshTickCmd())
@@ -720,17 +724,17 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentView = viewAdvCreate
 			return m, m.advCreate.Init()
 		case "[":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("[", vm.State) {
 				m.table.busyVMs[vm.Name] = busyInfo{operation: "Stopping", startTime: time.Now()}
 				return m, stopVMCmd(vm.Name)
 			}
 		case "]":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("]", vm.State) {
 				m.table.busyVMs[vm.Name] = busyInfo{operation: "Starting", startTime: time.Now()}
 				return m, startVMCmd(vm.Name)
 			}
 		case "p":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("p", vm.State) {
 				m.table.busyVMs[vm.Name] = busyInfo{operation: "Suspending", startTime: time.Now()}
 				return m, suspendVMCmd(vm.Name)
 			}
@@ -753,7 +757,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "d":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("d", vm.State) {
 				m.confirm = newConfirmModel(fmt.Sprintf("Delete VM '%s'? This will purge it.", vm.Name))
 				m.setChildSizes()
 				m.pendingCmd = deleteVMCmd(vm.Name)
@@ -761,7 +765,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "r":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("r", vm.State) {
 				m.table.busyVMs[vm.Name] = busyInfo{operation: "Recovering", startTime: time.Now()}
 				return m, recoverVMCmd(vm.Name)
 			}
@@ -790,27 +794,22 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.table.toggleFilter()
 			return m, nil
 		case "s":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("s", vm.State) {
 				c := exec.Command("multipass", "shell", vm.Name) // #nosec G204 -- VM name from table selection
 				return m, tea.ExecProcess(c, func(err error) tea.Msg {
 					return shellFinishedMsg{err: err}
 				})
 			}
 		case "n":
-			if vm, ok := m.table.selectedVM(); ok {
-				if vm.State == "Stopped" {
-					m.lastSnapVM = vm.Name
-					m.snapCreate = newSnapCreateModel(vm.Name, m.width, m.height)
-					m.currentView = viewSnapCreate
-					return m, m.snapCreate.Init()
-				}
-				m.errModal = newErrorModel("Snapshot Error", fmt.Sprintf("VM '%s' must be stopped to create a snapshot.", vm.Name))
-				m.setChildSizes()
-				m.currentView = viewError
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("n", vm.State) {
+				m.lastSnapVM = vm.Name
+				m.snapCreate = newSnapCreateModel(vm.Name, m.width, m.height)
+				m.currentView = viewSnapCreate
+				return m, m.snapCreate.Init()
 			}
 			return m, nil
 		case "m":
-			if vm, ok := m.table.selectedVM(); ok {
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("m", vm.State) {
 				m.lastSnapVM = vm.Name
 				m.loading = newLoadingModel("Loading snapshots…")
 				m.setChildSizes()
@@ -822,13 +821,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentView = viewLLMSettings
 			return m, m.llmSettings.Init()
 		case "M":
-			if vm, ok := m.table.selectedVM(); ok {
-				if vm.State != "Running" {
-					m.errModal = newErrorModel("Mount Error", fmt.Sprintf("VM '%s' must be running for mount operations.", vm.Name))
-					m.setChildSizes()
-					m.currentView = viewError
-					return m, nil
-				}
+			if vm, ok := m.table.selectedVM(); ok && vmShortcutEnabled("M", vm.State) {
 				m.lastMountVM = vm.Name
 				m.loading = newLoadingModel("Loading mounts…")
 				m.setChildSizes()

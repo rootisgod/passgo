@@ -1361,19 +1361,26 @@ func (m tableModel) renderFooterAtWidth(w int) string {
 	}
 	sep := footerSepStyle.Render(strings.Repeat("─", sepWidth))
 
+	// Determine selected VM state for enabling/disabling shortcuts
+	var vmState string
+	if vm, ok := m.selectedVM(); ok {
+		vmState = vm.State
+	}
+	en := func(key string) bool { return vmShortcutEnabled(key, vmState) }
+
 	// Group shortcuts by category
-	vmOps := []struct{ key, desc string }{
-		{"c", "Create"}, {"C", "Adv Create"}, {"[", "Stop"}, {"]", "Start"},
-		{"p", "Suspend"}, {"d", "Delete"}, {"r", "Recover"},
+	vmOps := []shortcut{
+		{"c", "Create", true}, {"C", "Adv Create", true}, {"[", "Stop", en("[")}, {"]", "Start", en("]")},
+		{"p", "Suspend", en("p")}, {"d", "Delete", en("d")}, {"r", "Recover", en("r")},
 	}
-	bulkOps := []struct{ key, desc string }{
-		{"<", "StopAll"}, {">", "StartAll"}, {"!", "Purge"},
+	bulkOps := []shortcut{
+		{"<", "StopAll", true}, {">", "StartAll", true}, {"!", "Purge", true},
 	}
-	navOps := []struct{ key, desc string }{
-		{"i", "Info"}, {"s", "Shell"}, {"n", "Snap"}, {"m", "Snaps"}, {"M", "Mount"},
+	navOps := []shortcut{
+		{"i", "Info", en("i")}, {"s", "Shell", en("s")}, {"n", "Snap", en("n")}, {"m", "Snaps", en("m")}, {"M", "Mount", en("M")},
 	}
-	appOps := []struct{ key, desc string }{
-		{"f", "Filter"}, {"/", "Refresh"}, {"1-0", "Theme"}, {"L", "LLM Settings"}, {"h", "Help"}, {"q", "Quit"},
+	appOps := []shortcut{
+		{"f", "Filter", true}, {"/", "Refresh", true}, {"1-0", "Theme", true}, {"L", "LLM Settings", true}, {"h", "Help", true}, {"q", "Quit", true},
 	}
 
 	divider := footerSepStyle.Render("  │  ")
@@ -1403,9 +1410,9 @@ func (m tableModel) renderFooterAtWidth(w int) string {
 		}
 	} else {
 		// Very narrow: minimal shortcuts
-		essentials := []struct{ key, desc string }{
-			{"c", "Create"}, {"[", "Stop"}, {"]", "Start"},
-			{"i", "Info"}, {"s", "Shell"}, {"q", "Quit"},
+		essentials := []shortcut{
+			{"c", "Create", true}, {"[", "Stop", en("[")}, {"]", "Start", en("]")},
+			{"i", "Info", en("i")}, {"s", "Shell", en("s")}, {"q", "Quit", true},
 		}
 		footerLines = renderShortcutLine(essentials)
 	}
@@ -1435,10 +1442,59 @@ func (m tableModel) renderFooterAtWidth(w int) string {
 	return sep + "\n" + centered
 }
 
-func renderShortcutLine(shortcuts []struct{ key, desc string }) string {
+// shortcut represents a footer menu item with optional enabled state.
+type shortcut struct {
+	key     string
+	desc    string
+	enabled bool
+}
+
+// vmShortcutEnabled returns whether a VM-specific shortcut key is valid for the given VM state.
+// Returns true for non-VM shortcuts (bulk ops, app ops) and when no VM is selected.
+func vmShortcutEnabled(key, vmState string) bool {
+	if vmState == "" {
+		// No VM selected — only non-VM shortcuts are valid
+		switch key {
+		case "[", "]", "p", "d", "r", "s", "i", "n", "m", "M":
+			return false
+		default:
+			return true
+		}
+	}
+	switch key {
+	case "[": // Stop
+		return vmState == "Running"
+	case "]": // Start
+		return vmState == "Stopped" || vmState == "Suspended"
+	case "p": // Suspend
+		return vmState == "Running"
+	case "d": // Delete
+		return vmState == "Running" || vmState == "Stopped" || vmState == "Suspended"
+	case "r": // Recover
+		return vmState == "Deleted"
+	case "s": // Shell
+		return vmState == "Running"
+	case "i": // Info
+		return vmState == "Running" || vmState == "Stopped" || vmState == "Suspended" || vmState == "Deleted"
+	case "n": // Snap (create snapshot)
+		return vmState == "Stopped"
+	case "m": // Snaps (manage snapshots)
+		return vmState == "Running" || vmState == "Stopped" || vmState == "Suspended"
+	case "M": // Mount
+		return vmState == "Running"
+	default:
+		return true
+	}
+}
+
+func renderShortcutLine(shortcuts []shortcut) string {
 	var parts []string
 	for _, s := range shortcuts {
-		parts = append(parts, footerKeyStyle.Render(s.key)+" "+footerDescStyle.Render(s.desc))
+		if s.enabled {
+			parts = append(parts, footerKeyStyle.Render(s.key)+" "+footerDescStyle.Render(s.desc))
+		} else {
+			parts = append(parts, footerKeyDimStyle.Render(s.key)+" "+footerDescDimStyle.Render(s.desc))
+		}
 	}
 	return strings.Join(parts, "  ")
 }
