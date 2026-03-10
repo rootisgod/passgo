@@ -18,7 +18,7 @@ const maxLLMResponseBytes = 10 * 1024 * 1024 // 10MB
 // ChatMessage represents a message in the conversation.
 type ChatMessage struct {
 	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
+	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
