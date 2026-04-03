@@ -49,11 +49,6 @@ func RunAgent(ctx context.Context, p *tea.Program, client *LLMClient,
 			return AgentResult{Response: resp.Content}
 		}
 
-		// Send intermediate assistant text (e.g. "I'll set up the web server...")
-		if resp.Content != "" && p != nil {
-			p.Send(chatAgentTextMsg{text: resp.Content})
-		}
-
 		// Append assistant message with tool calls
 		messages = append(messages, resp)
 

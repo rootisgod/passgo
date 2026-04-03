@@ -14,11 +14,6 @@ type chatToolDoneMsg struct {
 	err    error
 }
 
-// chatAgentTextMsg carries intermediate assistant text emitted alongside tool calls.
-type chatAgentTextMsg struct {
-	text string
-}
-
 // chatAgentResultMsg carries the final agent response.
 type chatAgentResultMsg struct {
 	response string
