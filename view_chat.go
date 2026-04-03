@@ -148,22 +148,33 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 
 		return m, cmd
 
-	case chatToolStartMsg:
+	case chatAgentTextMsg:
 		m.entries = append(m.entries, chatEntry{
-			role:    "tool-start",
-			content: fmt.Sprintf("Calling %s...", msg.name),
+			role:    "assistant",
+			content: msg.text,
 		})
 		m.refreshViewport()
 		return m, nil
 
+	case chatToolStartMsg:
+		// No separate entry for tool-start; tool-done will show the result
+		return m, nil
+
 	case chatToolDoneMsg:
-		status := "completed"
+		summary := msg.name
 		if msg.err != nil {
-			status = "failed: " + msg.err.Error()
+			summary += " failed: " + msg.err.Error()
+		} else {
+			// Show truncated result for context
+			result := msg.result
+			if len(result) > 60 {
+				result = result[:60] + "..."
+			}
+			summary += " " + result
 		}
 		m.entries = append(m.entries, chatEntry{
 			role:    "tool-done",
-			content: fmt.Sprintf("%s %s", msg.name, status),
+			content: summary,
 		})
 		m.refreshViewport()
 		return m, nil
@@ -261,7 +272,7 @@ func (m chatModel) renderEntries() string {
 		contentWidth = 10
 	}
 
-	for _, e := range m.entries {
+	for i, e := range m.entries {
 		switch e.role {
 		case "user":
 			label := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render("You: ")
@@ -276,7 +287,7 @@ func (m chatModel) renderEntries() string {
 			text := lipgloss.NewStyle().Foreground(t.TextMuted).Italic(true).Render(e.content)
 			lines = append(lines, icon+text)
 		case "tool-done":
-			icon := lipgloss.NewStyle().Foreground(t.Running).Render("  < ")
+			icon := lipgloss.NewStyle().Foreground(t.Suspended).Render("  > ")
 			text := lipgloss.NewStyle().Foreground(t.TextMuted).Render(e.content)
 			lines = append(lines, icon+text)
 		case "error":
@@ -287,7 +298,11 @@ func (m chatModel) renderEntries() string {
 			text := lipgloss.NewStyle().Foreground(t.Subtle).Italic(true).Width(contentWidth).Render(e.content)
 			lines = append(lines, text)
 		}
-		lines = append(lines, "")
+		// Skip blank line between consecutive tool entries for compact display
+		nextIsTool := i+1 < len(m.entries) && (m.entries[i+1].role == "tool-done" || m.entries[i+1].role == "tool-start")
+		if !(e.role == "tool-done" && nextIsTool) {
+			lines = append(lines, "")
+		}
 	}
 
 	return strings.Join(lines, "\n")
